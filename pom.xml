@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.ppos</groupId>
+  <artifactId>ej-render-test</artifactId>
+  <version>1.0-SNAPSHOT</version>
+
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <graaljs.version>22.3.5</graaljs.version>
+    <!-- exec:java 的默认入口。写成属性而非 plugin/configuration，-Dexec.mainClass 才能覆盖，
+         否则 pom 里的 configuration 优先级更高，命令行传什么都还是跑 Main。 -->
+    <exec.mainClass>com.ppos.ejtest.Main</exec.mainClass>
+  </properties>
+
+  <dependencies>
+    <!-- GraalJS：在标准 JDK 17 上以解释模式跑 JS，无需 GraalVM 发行版 -->
+    <dependency>
+      <groupId>org.graalvm.js</groupId>
+      <artifactId>js</artifactId>
+      <version>${graaljs.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.graalvm.js</groupId>
+      <artifactId>js-scriptengine</artifactId>
+      <version>${graaljs.version}</version>
+    </dependency>
+
+    <!-- txt → PDF -->
+    <dependency>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>pdfbox</artifactId>
+      <version>2.0.30</version>
+    </dependency>
+
+    <!-- 解析云端响应的分页元数据 / 组装 batch 详情 Map -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.15.4</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.1.0</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

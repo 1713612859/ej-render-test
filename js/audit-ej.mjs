@@ -1,0 +1,201 @@
+/**
+ * EJ 文件体检：结构、排序、日期归属、脏值、排版。
+ * 用法: node js/audit-ej.mjs <txt路径>
+ */
+import { readFileSync } from 'node:fs';
+
+const file = process.argv[2];
+if (!file) {
+  console.error('用法: node js/audit-ej.mjs <txt路径>');
+  process.exit(1);
+}
+
+const raw = readFileSync(file, 'utf8');
+const text = raw.replace(/^﻿/, '');
+const hadBom = raw.charCodeAt(0) === 0xfeff;
+
+// 每张票之间由 "\n   \n" 分隔（编排器 finish() 的拼接格式）
+const blocks = text.split('\n   \n').filter((b) => b.trim().length > 0);
+
+/**
+ * 视觉宽度：与 base.ts getTextLength() 同口径 —— CJK / 全角算 2，其余算 1。
+ * 字符区间对齐 templates/base.ts:267 的正则。
+ */
+const CJK = /[一-鿿　-〿＀-￯]/;
+const width = (s) => {
+  let w = 0;
+  for (const c of s) w += CJK.test(c) ? 2 : 1;
+  return w;
+};
+
+const TYPES = [
+  ['CASH IN', 0],
+  ['SALES INVOICE', 1],
+  ['RETURN TRANSACTION', 1],
+  ['VOID TRANSACTION', 1],
+  ['PICK UP CASH', 2],
+  ['CASH OUT', 3],
+  ['X-READING', 4],
+  ['Z-READING REPORT', 5],
+];
+
+function classify(b) {
+  for (const [label, seq] of TYPES) {
+    if (new RegExp(`^ *${label.replace(/[-]/g, '\\-')} *$`, 'm').test(b)) {
+      return { type: label, seq };
+    }
+  }
+  return { type: 'UNKNOWN', seq: 9 };
+}
+
+/** 取该票的事件时间：优先 Exact Date，其次 Report Date&Time / Date&Time。 */
+function eventTime(b) {
+  // 各模板的日期标签不统一：销售单 "Exact Date:"、X/Z "Report Date & Time:"、
+  // 退货/作废 "Date&Time"（无冒号）、现金票 "Date&Time:"。冒号一律可选。
+  const pats = [
+    /Exact Date:?\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/,
+    /Report Date ?& ?Time:?\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/,
+    /Date ?& ?Time:?\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/,
+  ];
+  for (const p of pats) {
+    const m = b.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** Z 票的营业日：Start Date & Time 的日期部分。 */
+function businessDate(b) {
+  const m = b.match(/Start Date ?& ?Time:\s*(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+const items = blocks.map((b, i) => ({
+  idx: i,
+  ...classify(b),
+  time: eventTime(b),
+  bd: businessDate(b),
+  body: b,
+}));
+
+console.log(`\n${'='.repeat(58)}`);
+console.log(` 文件      ${file.split(/[\\/]/).pop()}`);
+console.log(` 大小      ${(raw.length / 1024).toFixed(0)} KB / ${text.split('\n').length} 行`);
+console.log(` BOM       ${hadBom ? '✅ 有 (UTF-8 BOM)' : '❌ 缺失'}`);
+console.log(` 小票块数  ${blocks.length}`);
+console.log('='.repeat(58));
+
+// ── 1. 类型分布 ──
+console.log('\n【1】票据类型分布');
+const byType = {};
+for (const it of items) byType[it.type] = (byType[it.type] || 0) + 1;
+for (const [k, v] of Object.entries(byType).sort((a, b) => b[1] - a[1])) {
+  console.log(`   ${k.padEnd(22)} ${String(v).padStart(4)}${k === 'UNKNOWN' ? '  ⚠ 无法识别类型' : ''}`);
+}
+
+// ── 2. 排序 ──
+console.log('\n【2】排序正确性 (time 升序，同 time 按 seq)');
+let orderErr = 0;
+const timed = items.filter((i) => i.time);
+for (let i = 1; i < timed.length; i++) {
+  const a = timed[i - 1];
+  const b = timed[i];
+  if (a.time > b.time || (a.time === b.time && a.seq > b.seq)) {
+    orderErr++;
+    if (orderErr <= 5) {
+      console.log(`   ⚠ 逆序: #${a.idx} ${a.type}(seq${a.seq}) ${a.time}`);
+      console.log(`             → #${b.idx} ${b.type}(seq${b.seq}) ${b.time}`);
+    }
+  }
+}
+console.log(
+  `   带时间戳的票 ${timed.length}/${blocks.length}` +
+    `   逆序 ${orderErr} 处 ${orderErr === 0 ? '✅' : '❌'}`,
+);
+
+// ── 3. 日期范围 ──
+const m = file.match(/(\d{4}-\d{2}-\d{2})[_~](\d{4}-\d{2}-\d{2})/);
+console.log('\n【3】日期归属');
+if (m) {
+  const [, sd, ed] = m;
+  console.log(`   声明范围 ${sd} ~ ${ed}`);
+  let oob = 0;
+  for (const it of items) {
+    const d = it.type === 'Z-READING REPORT' ? it.bd : it.time?.slice(0, 10);
+    if (d && (d < sd || d > ed)) {
+      oob++;
+      if (oob <= 5) console.log(`   ⚠ 越界: #${it.idx} ${it.type} ${d}`);
+    }
+  }
+  console.log(`   越界票 ${oob} ${oob === 0 ? '✅' : '❌'}`);
+
+  const zs = items.filter((i) => i.type === 'Z-READING REPORT');
+  const cross = zs.filter((z) => z.bd && z.time && z.time.slice(0, 10) !== z.bd);
+  console.log(
+    `   Z-READING ${zs.length} 张，其中跨午夜 ${cross.length} 张` +
+      `（按 businessDate 归属，未被日期过滤误杀）`,
+  );
+}
+
+// ── 4. 双联配对 ──
+console.log('\n【4】副本配对');
+for (const t of ['RETURN TRANSACTION', 'VOID TRANSACTION']) {
+  const g = items.filter((i) => i.type === t);
+  const cashier = g.filter((i) => /Cashier Copy/.test(i.body)).length;
+  const customer = g.filter((i) => /Customer Copy/.test(i.body)).length;
+  const ok = cashier === customer && cashier * 2 === g.length;
+  console.log(
+    `   ${t.padEnd(20)} ${g.length} 张 = Cashier ${cashier} + Customer ${customer} ${ok ? '✅' : '❌ 不配对'}`,
+  );
+}
+const sales = items.filter((i) => i.type === 'SALES INVOICE');
+const govSales = sales.filter((i) => /Cashier Copy|Customer Copy/.test(i.body));
+console.log(
+  `   SALES INVOICE        ${sales.length} 张，其中双联 ${govSales.length} 张` +
+    `（政府折扣单）${govSales.length % 2 === 0 ? '✅' : '❌ 奇数，存在落单'}`,
+);
+
+// ── 5. 脏值 ──
+console.log('\n【5】脏值扫描');
+let dirty = 0;
+for (const p of ['null', 'undefined', 'NaN', 'TBD', 'Infinity', '[object', '{{', '}}']) {
+  const n = text.split(p).length - 1;
+  if (n > 0) dirty += n;
+  console.log(`   ${p.padEnd(12)} ${n}${n > 0 ? '  ⚠' : ''}`);
+}
+
+// ── 6. 排版 ──
+console.log('\n【6】排版（行宽 48）');
+const lines = text.split('\n');
+const over = lines
+  .map((l, i) => ({ i: i + 1, w: width(l), l }))
+  .filter((x) => x.w > 48);
+console.log(`   超宽行 ${over.length}`);
+for (const o of over.slice(0, 5)) {
+  console.log(`     L${o.i} 宽${o.w}: ${o.l.slice(0, 44)}...`);
+}
+if (over.length) {
+  const memo = over.filter((o) => /Memo/.test(o.l) || /Spice|Spicy|辣/.test(o.l)).length;
+  console.log(`     其中口味备注行 ${memo} 条（已知的刻意行为，对齐 AAPP，非缺陷）`);
+}
+
+// ── 7. 结构完整性 ──
+console.log('\n【7】小票结构完整性');
+let noHeader = 0;
+let noFooter = 0;
+for (const it of items) {
+  if (!/VAT-REG TIN|TIN:/.test(it.body)) noHeader++;
+  if (it.type === 'SALES INVOICE' && !/THIS SERVES AS YOUR SALES INVOICE/.test(it.body)) noFooter++;
+}
+console.log(`   缺税号头部  ${noHeader} ${noHeader === 0 ? '✅' : '⚠'}`);
+console.log(`   销售票缺尾部 ${noFooter} ${noFooter === 0 ? '✅' : '⚠'}`);
+
+const emptyAmount = items.filter((i) =>
+  /^(Gross Sales|Amount Due)\s*$/m.test(i.body),
+).length;
+console.log(`   金额行为空  ${emptyAmount} ${emptyAmount === 0 ? '✅' : '⚠'}`);
+
+console.log(`\n${'='.repeat(58)}`);
+const problems = orderErr + dirty + (byType.UNKNOWN || 0);
+console.log(problems === 0 ? ' 结论: 未发现结构性问题 ✅' : ` 结论: 发现 ${problems} 处待确认 ⚠`);
+console.log('='.repeat(58));

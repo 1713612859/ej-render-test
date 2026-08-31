@@ -1,0 +1,100 @@
+{
+  "orders": [
+    {
+      "id": 21398,
+      "orderNo": "0000000000000001",
+      "siNumber": "0000000000000001",
+      "orderStatus": 1,
+      "businessDate": "2026-07-27",
+      "orderTime": "2026-07-27 14:08:40",
+      "paidAt": "2026-07-27 14:08:40",
+      "cashierName": "Edison"
+    },
+    {
+      "id": 21400,
+      "orderNo": "0000000000000003",
+      "siNumber": "0000000000000003",
+      "orderStatus": 1,
+      "businessDate": "2026-07-27",
+      "orderTime": "2026-07-27 14:15:58",
+      "paidAt": "2026-07-27 14:15:58",
+      "cashierName": "Edison"
+    }
+  ],
+  "shiftRecords": [
+    {
+      "id": 5001,
+      "shiftNo": "SH-20260727-01",
+      "cashierName": "Edison",
+      "startTime": "2026-07-27 08:00:00",
+      "endTime": "2026-07-27 22:30:00",
+      "openingCash": 5000.0,
+      "closingCash": 8033.0,
+      "pickupCash": 1000.0,
+      "cashDifference": 0.0,
+      "totalAmount": 33.0,
+      "refundAmount": 0.0,
+      "begSiNo": "0000000000000001",
+      "endSiNo": "0000000000000001",
+      "shiftDetails": "{\"payments\":{\"CASH\":33.00},\"grossAmount\":30.00,\"netAmount\":33.00,\"vatableSales\":26.79,\"vatAmount\":3.21}"
+    }
+  ],
+  "dailySettlements": [
+    {
+      "id": 7001,
+      "businessDate": "2026-07-27",
+      "reportDateTime": "2026-07-28 00:15:00",
+      "startDateTime": "2026-07-27 08:00:00",
+      "endDateTime": "2026-07-27 23:59:59",
+      "begSiNo": "0000000000000001",
+      "endSiNo": "0000000000000001",
+      "zCounterNo": 45,
+      "presentAccumulatedSales": 125340.46,
+      "previousAccumulatedSales": 125307.46,
+      "salesForTheDay": 33.0,
+      "vatableSales": 26.79,
+      "vatAmount": 3.21,
+      "vatExemptSales": 0.0,
+      "zeroRatedSales": 0.0,
+      "grossAmount": 30.0,
+      "netAmount": 33.0,
+      "storeName": "Leo RESTAURANT SC 10% (bgc)",
+      "companyName": "Leo RESTAURANT SC 10% (bgc)",
+      "tinNumber": "123-456-789-96325",
+      "taxType": "VAT",
+      "snCode": "SN 1234567890",
+      "minNo": "MIN 1234567890",
+      "terminalNo": "645"
+    }
+  ],
+  "receipts": [
+    {
+      "id": 90001,
+      "receiptType": "RETURN_TXN",
+      "receiptNo": "RT-000009",
+      "printTime": "2026-07-27 16:20:00",
+      "printTxt": "SI#                             0000000000000139\nRETURN#                         0000000000000009\n跨日退货 verbatim 补票（原单 7/15 不在范围内）",
+      "extend": null
+    },
+    {
+      "id": 90002,
+      "receiptType": "RETURN_TXN",
+      "receiptNo": "RT-000010",
+      "printTime": "2026-07-27 17:00:00",
+      "printTxt": "SI#                             0000000000000001\nRETURN#                         0000000000000010\n原单在范围内，应被跳过避免双重计数",
+      "extend": null
+    },
+    {
+      "id": 90003,
+      "receiptType": "KITCHEN_DOCKET",
+      "receiptNo": "KD-0001",
+      "printTime": "2026-07-27 14:09:00",
+      "printTxt": "运维票，应整体跳过",
+      "extend": "{\"isReprint\":true}"
+    }
+  ],
+  "total": 2,
+  "pageNum": 1,
+  "pageSize": 500,
+  "hasNextPage": false
+}

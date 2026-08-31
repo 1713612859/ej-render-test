@@ -1,0 +1,1108 @@
+package com.ppos.ejtest;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+/**
+ * EJ 离线校验（结构 / 内容 / 金额），纯 Java 实现，不依赖 node。
+ *
+ * <p>与 {@code js/audit-ej.mjs}、{@code js/audit-content.mjs}、{@code js/audit-amounts.mjs}
+ * 同口径；JS 版留着做交叉验证，两边结论应当一致。
+ *
+ * <p>用法：
+ * <pre>
+ *   mvn -q exec:java -Dexec.mainClass=com.ppos.ejtest.EjAudit
+ *   mvn -q exec:java -Dexec.mainClass=com.ppos.ejtest.EjAudit -Dexec.args="out/xxx.txt"
+ * </pre>
+ * 不传路径时自动取 {@code out/} 下最新的 {@code EJournal*.txt}。
+ * 三项全过退出码 0，任一失败退出码 1。
+ */
+public class EjAudit {
+
+    /** 金额容差。与 audit-amounts.mjs 的 EPS 保持一致，改一处必须改另一处。 */
+    private static final double EPS = 0.1;
+
+    /** 行宽上限，对齐 base.ts 的 charPerLine。 */
+    private static final int LINE_WIDTH = 48;
+
+    private static final String SEP_LINE = "=".repeat(62);
+
+    // ── 票据类型与排序序号：同一时刻的票按 seq 先后印，与 JS 版一致 ──
+    private static final String[][] TYPES = {
+        {"CASH IN", "0"},
+        {"SALES INVOICE", "1"},
+        {"RETURN TRANSACTION", "1"},
+        {"VOID TRANSACTION", "1"},
+        {"PICK UP CASH", "2"},
+        {"CASH OUT", "3"},
+        {"X-READING", "4"},
+        {"Z-READING REPORT", "5"},
+    };
+
+    /**
+     * 商品行：缩进的「数量 单价 金额[ V/E/Z]」。用 [ \t] 而非 \s，避免跨行误匹配。
+     *
+     * <p>数量必须允许小数：称重商品与半份菜会印 0.5 / 0.38 这类值。
+     * 2026-08-31 生产核查踩过 —— 只匹配整数会把这类票误判成「0 条商品行」，
+     * 连带 Number of Items 也跟着报不符。
+     */
+    private static final Pattern ITEM_ROW = Pattern.compile(
+        "^[ \t]+(-?\\d+(?:\\.\\d+)?)[ \t]{2,}(-?[\\d,]+\\.\\d{2})[ \t]{2,}"
+            + "(-?[\\d,]+\\.\\d{2})[ \t]*[VEZ]?[ \t]*$");
+
+    /** 数量容差。数量可为小数，比较一律走容差，不用 ==。 */
+    private static final double QTY_EPS = 1e-6;
+    private static final Pattern SEP = Pattern.compile("^-{10,}$");
+    private static final Pattern HEADER =
+        Pattern.compile("^Description[ \t]+Qty[ \t]+U\\.Price[ \t]+Amount[ \t]*$");
+    private static final Pattern PLACEHOLDER =
+        Pattern.compile("^(null|undefined|NaN|-|--|TBD|N/A)$", Pattern.CASE_INSENSITIVE);
+
+    /** 票面实际印的支付方式标签。注意是 MAYA 不是 PAYMAYA，漏了会误判分账支付不平。 */
+    private static final String[] PAY_METHODS = {
+        "CASH", "GCASH", "CREDIT", "DEBIT", "MAYA", "PAYMAYA", "QRPH",
+        "WECHAT", "ALIPAY", "STORED VALUE CARD", "GIFT CHECK", "POINTS",
+        "MEMBER BALANCE",
+    };
+
+    /** 一张小票。 */
+    private record Block(int idx, String body, String type, int seq, String time, String businessDate) {
+        boolean isSale() { return "SALES INVOICE".equals(type); }
+        boolean isReturn() { return "RETURN TRANSACTION".equals(type); }
+        boolean isVoid() { return "VOID TRANSACTION".equals(type); }
+        boolean isTxn() { return isSale() || isReturn() || isVoid(); }
+    }
+
+    /** 一条商品行。qty 为 double —— 称重/半份商品的数量是小数。 */
+    private record Item(String name, double qty, double price, double amount) {}
+
+    /** 单项校验的结论。 */
+    private record Check(String label, int failures) {}
+
+    public static void main(String[] args) throws IOException {
+        Path file = args.length > 0 && !args[0].isBlank() ? Path.of(args[0]) : latestEj();
+        if (file == null) {
+            System.err.println("out/ 下没有 EJournal*.txt，请先生成或显式传入路径");
+            System.exit(1);
+        }
+        if (!Files.isRegularFile(file)) {
+            System.err.println("文件不存在: " + file);
+            System.exit(1);
+        }
+        if (args.length == 0) {
+            System.out.println("未指定文件，自动选用最新的: " + file);
+        }
+
+        String raw = Files.readString(file, StandardCharsets.UTF_8);
+        boolean hadBom = !raw.isEmpty() && raw.charAt(0) == '﻿';
+        String text = hadBom ? raw.substring(1) : raw;
+
+        List<Block> blocks = parse(text);
+
+        List<Check> all = new ArrayList<>();
+        all.addAll(auditStructure(file, raw, text, blocks, hadBom));
+        all.addAll(auditContent(blocks));
+        all.addAll(auditAmounts(blocks));
+        all.addAll(auditZReading(blocks));
+
+        int bad = 0;
+        System.out.println();
+        System.out.println(SEP_LINE);
+        System.out.println(" 汇总 — " + file.getFileName());
+        System.out.println(SEP_LINE);
+        for (Check c : all) {
+            boolean ok = c.failures() == 0;
+            if (!ok) bad++;
+            System.out.printf("  %s %-44s %s%n", ok ? "✅" : "❌", c.label(),
+                ok ? "通过" : "异常 " + c.failures());
+        }
+        System.out.println(SEP_LINE);
+        System.out.println(bad == 0 ? " 结论: 全部校验通过 ✅" : " 结论: " + bad + " 项校验未通过 ❌");
+        System.out.println(SEP_LINE);
+        System.exit(bad == 0 ? 0 : 1);
+    }
+
+    /** 取 out/ 下 mtime 最新的 EJournal*.txt。 */
+    private static Path latestEj() throws IOException {
+        Path dir = Path.of("out");
+        if (!Files.isDirectory(dir)) return null;
+        try (var s = Files.list(dir)) {
+            return s.filter(p -> p.getFileName().toString().matches("EJournal.*\\.txt"))
+                    .max(Comparator.comparingLong(p -> p.toFile().lastModified()))
+                    .orElse(null);
+        }
+    }
+
+    // ═══════════════════ 解析 ═══════════════════
+
+    /** 每张票之间由 "\n   \n" 分隔（编排器 finish() 的拼接格式）。 */
+    private static List<Block> parse(String text) {
+        String[] raw = text.split("\n {3}\n");
+        List<Block> out = new ArrayList<>();
+        int i = 0;
+        for (String b : raw) {
+            if (b.isBlank()) continue;
+            String type = "UNKNOWN";
+            int seq = 9;
+            for (String[] t : TYPES) {
+                if (has(b, "^ *" + Pattern.quote(t[0]) + " *$")) {
+                    type = t[0];
+                    seq = Integer.parseInt(t[1]);
+                    break;
+                }
+            }
+            out.add(new Block(i++, b, type, seq, eventTime(b), businessDate(b)));
+        }
+        return out;
+    }
+
+    /**
+     * 事件时间：各模板日期标签不统一 —— 销售单 "Exact Date:"、X/Z "Report Date & Time:"、
+     * 退货/作废 "Date&Time"（无冒号）、现金票 "Date&Time:"。冒号一律可选。
+     */
+    private static String eventTime(String b) {
+        String[] pats = {
+            "Exact Date:?[ \t]*(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})",
+            "Report Date ?& ?Time:?[ \t]*(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})",
+            "Date ?& ?Time:?[ \t]*(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})",
+        };
+        for (String p : pats) {
+            String m = find(b, p);
+            if (m != null) return m;
+        }
+        return null;
+    }
+
+    /** Z 票的营业日：Start Date & Time 的日期部分。 */
+    private static String businessDate(String b) {
+        return find(b, "Start Date ?& ?Time:[ \t]*(\\d{4}-\\d{2}-\\d{2})");
+    }
+
+    /** 取第 1 个捕获组，无匹配返回 null。 */
+    private static String find(String text, String regex) {
+        Matcher m = Pattern.compile(regex, Pattern.MULTILINE).matcher(text);
+        return m.find() ? m.group(1) : null;
+    }
+
+    /** 只判断有无匹配，用于不含捕获组的模式。 */
+    private static boolean has(String text, String regex) {
+        return Pattern.compile(regex, Pattern.MULTILINE).matcher(text).find();
+    }
+
+    /** 视觉宽度：与 base.ts getTextLength() 同口径 —— CJK / 全角算 2，其余算 1。 */
+    private static int width(String s) {
+        int w = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            boolean wide = (c >= '一' && c <= '鿿')
+                || (c >= '　' && c <= '〿')
+                || (c >= '＀' && c <= '￯');
+            w += wide ? 2 : 1;
+        }
+        return w;
+    }
+
+    private static double num(String s) {
+        return Double.parseDouble(s.replace(",", ""));
+    }
+
+    /** 取「标签 + 金额」行的金额，无该行返回 null。 */
+    private static Double amountOf(String b, String label) {
+        String v = find(b, "^" + Pattern.quote(label) + "[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
+        return v == null ? null : num(v);
+    }
+
+    /** 同名行可能出现多次（多组政府折扣），全部累加。 */
+    private static double sumAll(String b, String regex) {
+        Matcher m = Pattern.compile(regex, Pattern.MULTILINE).matcher(b);
+        double a = 0;
+        while (m.find()) a += num(m.group(1));
+        return a;
+    }
+
+    /** 票面 SI 号：只认独占一行的 SI，避免误抓 Billing#/VOID#/RETURN#。 */
+    private static String siOf(Block b) {
+        for (String p : new String[]{
+            "^[ \t]*SI[ \t]+(\\d{10,})[ \t]*$",
+            "^SI#[ \t]+(\\d{10,})[ \t]*$",
+            "^Sales SI#[ \t]+(\\d{10,})[ \t]*$",
+        }) {
+            String m = find(b.body(), p);
+            if (m != null) {
+                String s = m.replaceFirst("^0+", "");
+                return s.isEmpty() ? "0" : s;
+            }
+        }
+        return "块#" + b.idx();
+    }
+
+    private static String tagOf(Block b) {
+        String t = b.isSale() ? "SALE" : b.isReturn() ? "RETURN" : "VOID";
+        return t + " SI " + siOf(b) + " (块#" + b.idx() + ")";
+    }
+
+    // ═══════════════════ 一、结构 / 排序 / 排版 ═══════════════════
+
+    private static List<Check> auditStructure(
+            Path file, String raw, String text, List<Block> blocks, boolean hadBom) {
+
+        System.out.println();
+        System.out.println(SEP_LINE);
+        System.out.printf(" 【一】结构 / 排序 / 排版 — %s%n", file.getFileName());
+        System.out.printf(" 大小 %d KB / %d 行 / %d 张票 / BOM %s%n",
+            raw.length() / 1024, text.split("\n", -1).length, blocks.size(),
+            hadBom ? "✅ 有" : "❌ 缺失");
+        System.out.println(SEP_LINE);
+
+        // 类型分布
+        Map<String, Integer> byType = new LinkedHashMap<>();
+        for (Block b : blocks) byType.merge(b.type(), 1, Integer::sum);
+        System.out.println(" 票据类型分布");
+        byType.entrySet().stream()
+            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+            .forEach(e -> System.out.printf("   %-22s %4d%s%n", e.getKey(), e.getValue(),
+                "UNKNOWN".equals(e.getKey()) ? "  ⚠ 无法识别类型" : ""));
+        int unknown = byType.getOrDefault("UNKNOWN", 0);
+
+        // 排序：time 升序，同 time 按 seq
+        List<Block> timed = blocks.stream().filter(b -> b.time() != null).toList();
+
+        // 时间跨度与按日分布：能一眼看出有没有整天缺票
+        if (!timed.isEmpty()) {
+            System.out.printf(" 时间跨度  %s → %s%n",
+                timed.get(0).time(), timed.get(timed.size() - 1).time());
+            Map<String, Integer> byDay = new java.util.TreeMap<>();
+            for (Block b : timed) byDay.merge(b.time().substring(0, 10), 1, Integer::sum);
+            System.out.printf(" 按日分布  覆盖 %d 天，日均 %.1f 张%n",
+                byDay.size(), (double) timed.size() / byDay.size());
+            int col = 0;
+            StringBuilder sb = new StringBuilder("   ");
+            for (Map.Entry<String, Integer> e : byDay.entrySet()) {
+                sb.append(String.format("%s ×%-3d ", e.getKey().substring(5), e.getValue()));
+                if (++col % 6 == 0) { System.out.println(sb); sb = new StringBuilder("   "); }
+            }
+            if (col % 6 != 0) System.out.println(sb);
+        }
+        int orderErr = 0;
+        for (int i = 1; i < timed.size(); i++) {
+            Block a = timed.get(i - 1);
+            Block c = timed.get(i);
+            int cmp = a.time().compareTo(c.time());
+            if (cmp > 0 || (cmp == 0 && a.seq() > c.seq())) {
+                orderErr++;
+                if (orderErr <= 5) {
+                    System.out.printf("   ⚠ 逆序: #%d %s(seq%d) %s → #%d %s(seq%d) %s%n",
+                        a.idx(), a.type(), a.seq(), a.time(),
+                        c.idx(), c.type(), c.seq(), c.time());
+                }
+            }
+        }
+        System.out.printf(" 排序      带时间戳 %d/%d，逆序 %d 处%n",
+            timed.size(), blocks.size(), orderErr);
+
+        // 日期归属：范围从文件名里取
+        int oob = 0;
+        Matcher fm = Pattern.compile("(\\d{4}-\\d{2}-\\d{2})[_~](\\d{4}-\\d{2}-\\d{2})")
+            .matcher(file.getFileName().toString());
+        if (fm.find()) {
+            String sd = fm.group(1);
+            String ed = fm.group(2);
+            for (Block b : blocks) {
+                String d = "Z-READING REPORT".equals(b.type())
+                    ? b.businessDate()
+                    : (b.time() == null ? null : b.time().substring(0, 10));
+                if (d != null && (d.compareTo(sd) < 0 || d.compareTo(ed) > 0)) {
+                    oob++;
+                    if (oob <= 5) System.out.printf("   ⚠ 越界: #%d %s %s%n", b.idx(), b.type(), d);
+                }
+            }
+            long zs = blocks.stream().filter(b -> "Z-READING REPORT".equals(b.type())).count();
+            long cross = blocks.stream()
+                .filter(b -> "Z-READING REPORT".equals(b.type()))
+                .filter(b -> b.businessDate() != null && b.time() != null
+                    && !b.time().substring(0, 10).equals(b.businessDate()))
+                .count();
+            System.out.printf(" 日期归属  声明 %s ~ %s，越界 %d；Z-READING %d 张其中跨午夜 %d 张%n",
+                sd, ed, oob, zs, cross);
+        }
+
+        // 双联配对
+        int pairErr = 0;
+        for (String t : new String[]{"RETURN TRANSACTION", "VOID TRANSACTION"}) {
+            List<Block> g = blocks.stream().filter(b -> t.equals(b.type())).toList();
+            long cashier = g.stream().filter(b -> b.body().contains("Cashier Copy")).count();
+            long customer = g.stream().filter(b -> b.body().contains("Customer Copy")).count();
+            boolean ok = cashier == customer && cashier * 2 == g.size();
+            if (!ok) pairErr++;
+            System.out.printf(" 副本配对  %-20s %d 张 = Cashier %d + Customer %d %s%n",
+                t, g.size(), cashier, customer, ok ? "✅" : "❌ 不配对");
+        }
+        List<Block> sales = blocks.stream().filter(Block::isSale).toList();
+        long govSales = sales.stream()
+            .filter(b -> b.body().contains("Cashier Copy") || b.body().contains("Customer Copy"))
+            .count();
+        if (govSales % 2 != 0) pairErr++;
+        System.out.printf(" 副本配对  %-20s %d 张，其中双联 %d 张（政府折扣单）%s%n",
+            "SALES INVOICE", sales.size(), govSales, govSales % 2 == 0 ? "✅" : "❌ 奇数，存在落单");
+
+        // 脏值
+        int dirty = 0;
+        StringBuilder dirtyLine = new StringBuilder();
+        for (String p : new String[]{"null", "undefined", "NaN", "TBD", "Infinity", "[object", "{{", "}}"}) {
+            int n = countOccurrences(text, p);
+            dirty += n;
+            if (n > 0) dirtyLine.append(p).append("×").append(n).append(" ");
+        }
+        System.out.printf(" 脏值扫描  %s%n", dirty == 0 ? "全 0 ✅" : dirtyLine + "⚠");
+
+        // 排版：超宽行。口味备注超宽是对齐 AAPP 的刻意行为，单独计数不算失败。
+        String[] lines = text.split("\n", -1);
+        List<String> over = new ArrayList<>();
+        for (int i = 0; i < lines.length; i++) {
+            if (width(lines[i]) > LINE_WIDTH) over.add("L" + (i + 1) + " 宽" + width(lines[i]) + ": " + lines[i]);
+        }
+        long memo = over.stream()
+            .filter(s -> s.contains("Memo") || s.contains("Spice") || s.contains("Spicy") || s.contains("辣"))
+            .count();
+        int realOver = over.size() - (int) memo;
+        System.out.printf(" 排版      超宽行 %d（其中口味备注 %d 条属刻意行为），实际超宽 %d%n",
+            over.size(), memo, realOver);
+        for (String s : over.stream().limit(5).toList()) {
+            System.out.println("   " + s.substring(0, Math.min(60, s.length())));
+        }
+
+        // 结构完整性
+        int noHeader = 0;
+        int noFooter = 0;
+        int emptyAmount = 0;
+        Pattern tin = Pattern.compile("VAT-REG TIN|TIN:");
+        Pattern empty = Pattern.compile("^(Gross Sales|Amount Due)[ \t]*$", Pattern.MULTILINE);
+        for (Block b : blocks) {
+            if (!tin.matcher(b.body()).find()) noHeader++;
+            if (b.isSale() && !b.body().contains("THIS SERVES AS YOUR SALES INVOICE")) noFooter++;
+            if (empty.matcher(b.body()).find()) emptyAmount++;
+        }
+        System.out.printf(" 结构完整  缺税号头部 %d / 销售票缺尾部 %d / 金额行为空 %d%n",
+            noHeader, noFooter, emptyAmount);
+
+        return List.of(
+            new Check("[结构] 票据类型可识别", unknown),
+            new Check("[结构] 时间升序无逆序", orderErr),
+            new Check("[结构] 日期归属无越界", oob),
+            new Check("[结构] 双联配对", pairErr),
+            new Check("[结构] 无脏值", dirty),
+            new Check("[结构] 行宽 ≤ " + LINE_WIDTH + "（口味备注除外）", realOver),
+            new Check("[结构] 头部/尾部/金额行完整", noHeader + noFooter + emptyAmount)
+        );
+    }
+
+    private static int countOccurrences(String text, String needle) {
+        int n = 0;
+        int i = text.indexOf(needle);
+        while (i >= 0) {
+            n++;
+            i = text.indexOf(needle, i + needle.length());
+        }
+        return n;
+    }
+
+    // ═══════════════════ 二、内容完整性 ═══════════════════
+
+    /** 商品区：表头行之后到下一条分隔线为止（表头下面紧跟一条分隔线，跳过）。 */
+    private static List<String> itemRegion(String body) {
+        String[] lines = body.split("\n", -1);
+        int h = -1;
+        for (int i = 0; i < lines.length; i++) {
+            if (HEADER.matcher(lines[i]).matches()) { h = i; break; }
+        }
+        if (h < 0) return null;
+        int start = h + 1;
+        if (start < lines.length && SEP.matcher(lines[start]).matches()) start++;
+        int end = start;
+        while (end < lines.length && !SEP.matcher(lines[end]).matches()) end++;
+        return List.of(lines).subList(Math.min(start, lines.length), Math.min(end, lines.length));
+    }
+
+    /** 拆商品行：商品行之前的非行文本即名称（可跨行）。 */
+    private static List<Item> parseItems(List<String> region) {
+        List<Item> items = new ArrayList<>();
+        StringBuilder name = new StringBuilder();
+        for (String l : region) {
+            Matcher m = ITEM_ROW.matcher(l);
+            if (m.matches()) {
+                items.add(new Item(name.toString().trim(),
+                    Double.parseDouble(m.group(1)), num(m.group(2)), num(m.group(3))));
+                name.setLength(0);
+            } else if (!l.isBlank()) {
+                name.append(l.trim());
+            }
+        }
+        return items;
+    }
+
+    /**
+     * 取「标签 + 数字（可含小数）」行。
+     * Total Qty 在称重/半份商品场景会印成 0.5 这类小数，用 intOf 读会拿到 null，
+     * 导致「数量合计 = Total Qty」静默跳过而非真的通过。
+     */
+    private static Double decimalOf(String b, String label) {
+        String v = find(b, "^" + Pattern.quote(label) + "[ \t]+(-?\\d+(?:\\.\\d+)?)[ \t]*$");
+        return v == null ? null : Double.parseDouble(v);
+    }
+
+    /** 数量显示：整数不拖小数点，小数去掉尾随零。 */
+    private static String qtyStr(double q) {
+        if (Math.abs(q - Math.rint(q)) < QTY_EPS) return String.valueOf((long) Math.rint(q));
+        return java.math.BigDecimal.valueOf(q)
+            .setScale(4, java.math.RoundingMode.HALF_UP)
+            .stripTrailingZeros().toPlainString();
+    }
+
+    private static Integer intOf(String b, String label) {
+        String v = find(b, "^" + Pattern.quote(label) + "[ \t]+(-?\\d+)[ \t]*$");
+        return v == null ? null : Integer.parseInt(v);
+    }
+
+    /** 字段值：缺标签返回 null，标签在但值为空返回 ""。 */
+    private static String fieldOf(String b, String label) {
+        Matcher m = Pattern.compile("^" + Pattern.quote(label) + "[ \t]*(.*)$", Pattern.MULTILINE)
+            .matcher(b);
+        return m.find() ? m.group(1).trim() : null;
+    }
+
+    private static List<Check> auditContent(List<Block> blocks) {
+        List<Block> txns = blocks.stream().filter(Block::isTxn).toList();
+        System.out.println();
+        System.out.println(SEP_LINE);
+        System.out.printf(" 【二】内容完整性 — 销售 %d / 退货 %d / 作废 %d 张%n",
+            txns.stream().filter(Block::isSale).count(),
+            txns.stream().filter(Block::isReturn).count(),
+            txns.stream().filter(Block::isVoid).count());
+        System.out.println(SEP_LINE);
+
+        int noRegion = 0, noItem = 0, noName = 0, badName = 0, zeroQty = 0;
+        int cntMismatch = 0, qtyMismatch = 0, missField = 0;
+        List<String> problems = new ArrayList<>();
+
+        // 统计口径的旁证：行数/数量/品名种类，用来判断解析是不是把票读全了
+        int itemRows = 0;
+        double qtyTotal = 0;
+        int fieldChecked = 0;
+        Map<String, Integer> nameFreq = new LinkedHashMap<>();
+        int maxItemsPerTxn = 0;
+        String maxItemsTag = "";
+
+        for (Block b : txns) {
+            String tag = tagOf(b);
+            List<String> region = itemRegion(b.body());
+            if (region == null) {
+                noRegion++;
+                problems.add("[无商品区] " + tag + ": 整张票没有 Description/Qty/U.Price 表头");
+                continue;
+            }
+            List<Item> items = parseItems(region);
+            itemRows += items.size();
+            qtyTotal += items.stream().mapToDouble(Item::qty).map(Math::abs).sum();
+            for (Item it : items) nameFreq.merge(it.name(), 1, Integer::sum);
+            if (items.size() > maxItemsPerTxn) {
+                maxItemsPerTxn = items.size();
+                maxItemsTag = tag;
+            }
+
+            // 核心：有订单信息但没有商品信息
+            if (items.isEmpty()) {
+                noItem++;
+                long orphan = region.stream().filter(l -> !l.isBlank()).count();
+                problems.add("[无商品行] " + tag + ": 有订单头和金额，但商品区 0 条商品行（区内残留 "
+                    + orphan + " 行文本）");
+            }
+            for (Item it : items) {
+                if (it.name().isEmpty()) {
+                    noName++;
+                    problems.add("[缺商品名] " + tag + ": 数量 " + qtyStr(it.qty())
+                        + " 金额 " + it.amount() + " 的行没有描述");
+                } else if (PLACEHOLDER.matcher(it.name()).matches()) {
+                    badName++;
+                    problems.add("[商品名占位] " + tag + ": 商品名为 \"" + it.name() + "\"");
+                }
+                if (Math.abs(it.qty()) < QTY_EPS) {
+                    zeroQty++;
+                    problems.add("[数量为零] " + tag + ": \"" + it.name() + "\" 数量 0");
+                }
+            }
+
+            // 计数勾稽：退货/作废模板不输出这两行，仅销售票做
+            if (b.isSale()) {
+                Integer nItems = intOf(b.body(), "Number of Items");
+                Double totalQty = decimalOf(b.body(), "Total Qty");
+                if (nItems != null && nItems != items.size()) {
+                    cntMismatch++;
+                    problems.add("[行数不符] " + tag + ": 解析出 " + items.size()
+                        + " 条商品行，票面 Number of Items " + nItems);
+                }
+                double qtySum = items.stream().mapToDouble(Item::qty).sum();
+                if (totalQty != null && Math.abs(totalQty - qtySum) > QTY_EPS) {
+                    qtyMismatch++;
+                    problems.add("[数量不符] " + tag + ": 各行 Qty 合计 " + qtyStr(qtySum)
+                        + "，票面 Total Qty " + qtyStr(totalQty));
+                }
+            }
+
+            // 订单头字段。作废票印 "Sales SI#"，退货票印 "SI#" —— 标签不统一，勿合并
+            String[] required = b.isSale()
+                ? new String[]{"SI", "Billing#:", "Cashier:", "TERMINAL#:", "Exact Date:"}
+                : b.isReturn()
+                    ? new String[]{"RETURN#", "SI#", "Date&Time"}
+                    : new String[]{"VOID#", "Sales SI#", "Date&Time"};
+            fieldChecked += required.length;
+            for (String f : required) {
+                String v = "SI".equals(f)
+                    ? find(b.body(), "^[ \t]*SI[ \t]+(\\S+)[ \t]*$")
+                    : fieldOf(b.body(), f);
+                if (v == null) {
+                    missField++;
+                    problems.add("[缺字段] " + tag + ": 没有 \"" + f + "\" 行");
+                } else if (v.isEmpty()) {
+                    missField++;
+                    problems.add("[空字段] " + tag + ": \"" + f + "\" 值为空");
+                }
+            }
+        }
+
+        // 全局单号连续性 —— 不依赖 Z 报表，覆盖没有 Z 的营业日。
+        // 2026-08-27 加：RETURN#21 丢在 08-25，而该日的 Z 不在导出范围内，
+        // Z11 的号段缺号检查够不着，只有这一项能发现。
+        int seqGap = 0;
+        for (String label : new String[]{"SI", "RETURN", "VOID"}) {
+            List<Long> nums = txns.stream()
+                .filter(b -> label.equals("SI") ? b.isSale()
+                    : label.equals("RETURN") ? b.isReturn() : b.isVoid())
+                .map(EjAudit::numOf)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .sorted()
+                .toList();
+            if (nums.size() < 2) continue;
+            List<Long> missing = new ArrayList<>();
+            for (int i = 1; i < nums.size(); i++) {
+                long prev = nums.get(i - 1);
+                long cur = nums.get(i);
+                // 号段可能被重置（已知 07-19 与 08-24 都出现过 RETURN#12/#13），
+                // 跨度过大时视为换段而非缺号，避免整段误报
+                if (cur - prev > 1 && cur - prev <= 50) {
+                    for (long n = prev + 1; n < cur; n++) missing.add(n);
+                }
+            }
+            if (!missing.isEmpty()) {
+                seqGap += missing.size();
+                problems.add("[单号断号] " + label + "# 缺 "
+                    + missing.stream().map(String::valueOf).collect(Collectors.joining(","))
+                    + "（区间 " + nums.get(0) + "~" + nums.get(nums.size() - 1) + "）");
+            }
+        }
+
+        System.out.printf(" 解析口径  商品行 %d 条 / 数量合计 %s / 品名 %d 种 / 检查字段 %d 个%n",
+            itemRows, qtyStr(qtyTotal), nameFreq.size(), fieldChecked);
+        System.out.printf(" 单票商品  平均 %.1f 行，最多 %d 行 @ %s%n",
+            txns.isEmpty() ? 0 : (double) itemRows / txns.size(), maxItemsPerTxn, maxItemsTag);
+        System.out.println(" 高频品名  " + nameFreq.entrySet().stream()
+            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+            .limit(5)
+            .map(e -> e.getKey() + "×" + e.getValue())
+            .collect(Collectors.joining("  ")));
+
+        List<Check> checks = List.of(
+            new Check("[内容] 商品区表头存在", noRegion),
+            new Check("[内容] 商品行 ≥ 1（有订单必有商品）", noItem),
+            new Check("[内容] 商品名非空", noName),
+            new Check("[内容] 商品名非占位值", badName),
+            new Check("[内容] 商品数量非零", zeroQty),
+            new Check("[内容] 商品行数 = Number of Items", cntMismatch),
+            new Check("[内容] 数量合计 = Total Qty", qtyMismatch),
+            new Check("[内容] 订单头关键字段齐全", missField),
+            new Check("[内容] 单号无断号（SI/RETURN/VOID，容忍重置）", seqGap)
+        );
+        printChecks(checks, problems);
+        return checks;
+    }
+
+    // ═══════════════════ 三、金额勾稽 ═══════════════════
+
+    private static List<Check> auditAmounts(List<Block> blocks) {
+        List<Block> txns = blocks.stream().filter(Block::isTxn).toList();
+        System.out.println();
+        System.out.println(SEP_LINE);
+        System.out.printf(" 【三】金额勾稽（容差 %.2f）%n", EPS);
+        System.out.println(SEP_LINE);
+
+        int a = 0, bCnt = 0, c = 0, d = 0, dPartial = 0;
+        List<String> problems = new ArrayList<>();
+
+        // 各项的最大偏差：即使全部落在容差内，也要看清离阈值还有多远。
+        // 容差从 0.02 放宽到 0.1 后，这几行就是判断"放宽是否过头"的唯一依据。
+        double[] maxDiff = new double[4];
+        String[] maxDiffTag = {"-", "-", "-", "-"};
+
+        // 金额小计：与 Z 报表核对时的旁证
+        double grossSale = 0, grossRet = 0, grossVoid = 0;
+        double dueSale = 0, vatSale = 0, svcSale = 0, discSale = 0;
+
+        for (Block blk : txns) {
+            String b = blk.body();
+            String tag = tagOf(blk);
+
+            Double gross = amountOf(b, "Gross Sales");
+            Double due = null;
+            String dueRaw = find(b, "^(?:Amount Due|Amount)[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
+            if (dueRaw != null) due = num(dueRaw);
+            // 服务费：销售票 "Service Charge(10%)"，作废/退货票 "Service Charge"
+            String svcRaw = find(b, "^Service Charge(?:\\([^)]*\\))?[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
+            double svc = svcRaw == null ? 0 : num(svcRaw);
+
+            double lessVat = sumAll(b, "^LESS 12% VAT[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
+            double addVat = sumAll(b, "^Add 12% VAT[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
+            double govDisc = sumAll(b, "^Discount \\d+%[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
+            double regDisc = sumAll(b, "^Regular Discount[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
+
+            // 退货/作废票金额整体取负，但折扣行仍印正数（模板取绝对值），
+            // 所以折扣对总额是「冲回」(加) 而非「扣减」(减)。
+            int ds = blk.isSale() ? -1 : 1;
+
+            // 金额小计
+            if (gross != null) {
+                if (blk.isSale()) grossSale += gross;
+                else if (blk.isReturn()) grossRet += gross;
+                else grossVoid += gross;
+            }
+            if (blk.isSale()) {
+                if (due != null) dueSale += due;
+                svcSale += svc;
+                discSale += govDisc + regDisc;
+                Double v = amountOf(b, "VAT Amount (12%)");
+                if (v != null) vatSale += v;
+            }
+
+            // A 应付
+            if (gross != null && due != null) {
+                double expect = gross - lessVat + addVat + ds * (govDisc + regDisc) + svc;
+                track(maxDiff, maxDiffTag, 0, Math.abs(expect - due), tag);
+                if (Math.abs(expect - due) > EPS) {
+                    a++;
+                    problems.add(String.format("[A 应付] %s: Gross %.2f - LessVAT %.2f + AddVAT %.2f "
+                        + "%s Disc %.2f + SC %.2f = %.2f，票面 %.2f",
+                        tag, gross, lessVat, addVat, ds > 0 ? "+" : "-", govDisc + regDisc, svc, expect, due));
+                }
+            }
+
+            // B 税分解：基数 = 毛额 - LessVAT + AddVAT，再冲减【普通折扣】。
+            // 政府折扣不参与：SC/PWD 是先剥 VAT 再打折，剥 VAT 已由 LessVAT 体现。
+            Double vatable = amountOf(b, "VATable Sales");
+            Double vat = amountOf(b, "VAT Amount (12%)");
+            Double exempt = amountOf(b, "VAT Exempt Sales");
+            Double zero = amountOf(b, "Zero Rated Sales");
+            if (vatable != null && vat != null && exempt != null && zero != null && gross != null) {
+                double base = gross - lessVat + addVat + ds * regDisc;
+                double sum = vatable + vat + exempt + zero;
+                track(maxDiff, maxDiffTag, 1, Math.abs(sum - base), tag);
+                if (Math.abs(sum - base) > EPS) {
+                    bCnt++;
+                    problems.add(String.format("[B 税分解] %s: %.2f+%.2f+%.2f+%.2f = %.2f，基数 %.2f",
+                        tag, vatable, vat, exempt, zero, sum, base));
+                }
+            }
+
+            // C 收付：仅销售票。void/return 模板不输出 CHANGE 行，支付行是原单全额冲销。
+            if (blk.isSale() && due != null) {
+                double paid = 0;
+                boolean hasPay = false;
+                for (String pm : PAY_METHODS) {
+                    Double v = amountOf(b, pm);
+                    if (v != null) { paid += v; hasPay = true; }
+                }
+                Double change = amountOf(b, "CHANGE");
+                double chg = change == null ? 0 : change;
+                if (hasPay) track(maxDiff, maxDiffTag, 2, Math.abs(paid - chg - due), tag);
+                if (hasPay && Math.abs(paid - chg - due) > EPS) {
+                    c++;
+                    problems.add(String.format("[C 收付] %s: 支付 %.2f - 找零 %.2f = %.2f，应付 %.2f",
+                        tag, paid, chg, paid - chg, due));
+                }
+            }
+
+            // D 行合计。退货票列原单全部商品，部分退货时不等，属预期。
+            List<String> region = itemRegion(b);
+            List<Item> items = region == null ? List.of() : parseItems(region);
+            if (!items.isEmpty() && gross != null) {
+                double sum = items.stream().mapToDouble(Item::amount).sum();
+                if (!blk.isReturn()) track(maxDiff, maxDiffTag, 3, Math.abs(sum - gross), tag);
+                if (Math.abs(sum - gross) > EPS) {
+                    if (blk.isReturn()) {
+                        dPartial++;
+                    } else {
+                        d++;
+                        problems.add(String.format("[D 行合计] %s: %d 行合计 %.2f，Gross %.2f",
+                            tag, items.size(), sum, gross));
+                    }
+                }
+            }
+        }
+
+        List<Check> checks = List.of(
+            new Check("[金额] A 应付 = 毛额-LessVAT-折扣+AddVAT+服务费", a),
+            new Check("[金额] B 税分解合计 = 毛额-LessVAT+AddVAT", bCnt),
+            new Check("[金额] C 支付-找零 = 应付（仅销售票）", c),
+            new Check("[金额] D 商品行合计 = Gross（退货票除外）", d)
+        );
+        printChecks(checks, problems);
+        System.out.printf("   ℹ 退货票行合计 ≠ Gross 的 %d 张（列出原单全部商品，部分退货属预期）%n", dPartial);
+
+        System.out.println();
+        System.out.println(" 各项最大偏差（容差 " + EPS + "，越接近容差越值得复核）");
+        String[] names = {"A 应付", "B 税分解", "C 收付", "D 行合计"};
+        for (int i = 0; i < 4; i++) {
+            double pct = EPS == 0 ? 0 : maxDiff[i] / EPS * 100;
+            System.out.printf("   %-10s %6.2f  (容差的 %3.0f%%)  @ %s%n",
+                names[i], maxDiff[i], pct, maxDiffTag[i]);
+        }
+
+        System.out.println();
+        System.out.println(" 金额小计（供与 Z 报表核对，非校验项）");
+        System.out.printf("   销售 Gross %,12.2f   应付 %,12.2f   VAT %,10.2f%n",
+            grossSale, dueSale, vatSale);
+        System.out.printf("   服务费     %,12.2f   折扣 %,12.2f%n", svcSale, discSale);
+        System.out.printf("   退货 Gross %,12.2f   作废 Gross %,12.2f   净额 %,12.2f%n",
+            grossRet, grossVoid, grossSale + grossRet + grossVoid);
+        return checks;
+    }
+
+    // ═══════════════════ 四、Z-READING ═══════════════════
+
+    /** 某营业日从明细票汇总出的口径，用于与 Z 报表交叉核对。 */
+    private static final class DayTotal {
+        double sale, ret, voided;
+    }
+
+    /**
+     * Z-READING 校验：报表内部自洽 + 跨报表连续性 + 与明细票交叉核对。
+     *
+     * <p>各规则的口径都在这批真实数据上逐条验证过，勿凭直觉修改：
+     * <ul>
+     *   <li>税分解基数要再扣 OTHER DISC（普通折扣），政府折扣不扣 —— 与单票 B 项同源；
+     *   <li>LESS RETURN / LESS VOID 是<b>剥完 VAT</b> 的净额，VAT 部分记在
+     *       VAT ON RETURN / VAT ON VOID，两者相加才等于明细票毛额；
+     *   <li>当日无销售时 Beg./End. SI # 停在上一期的 End，不算断号。
+     * </ul>
+     */
+    private static List<Check> auditZReading(List<Block> blocks) {
+        // 文件整体按票据打印时间排序，但补做 Z 时多张报表可能具有相同的 Report Date & Time，
+        // 此时源列表顺序不一定等于营业日顺序。Z Counter、累计销售和 SI 号段都必须按
+        // Start Date & Time 所代表的营业日串联，否则会把 8/12 #17、8/11 #16 误判为断号。
+        List<Block> zs = blocks.stream()
+            .filter(b -> "Z-READING REPORT".equals(b.type()))
+            .sorted(Comparator
+                .comparing(Block::businessDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Block::time, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparingInt(Block::idx))
+            .toList();
+
+        System.out.println();
+        System.out.println(SEP_LINE);
+        System.out.printf(" 【四】Z-READING — %d 张%n", zs.size());
+        System.out.println(SEP_LINE);
+        if (zs.isEmpty()) {
+            System.out.println("   本文件没有 Z-READING，跳过");
+            return List.of();
+        }
+
+        // 明细票按营业日汇总（双联票按单号去重，否则金额翻倍）
+        Map<String, DayTotal> day = new LinkedHashMap<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        java.util.Set<Long> siSeen = new java.util.HashSet<>();
+        java.util.Set<Long> voidSeen = new java.util.HashSet<>();
+        java.util.Set<Long> retSeen = new java.util.HashSet<>();
+        for (Block b : blocks) {
+            if (!b.isTxn()) continue;
+            Double g = amountOf(b.body(), "Gross Sales");
+            String no;
+            String d;
+            if (b.isSale()) {
+                no = "S" + find(b.body(), "^[ \t]*SI[ \t]+(\\d{10,})[ \t]*$");
+                d = find(b.body(), "Exact Date:[ \t]*(\\d{4}-\\d{2}-\\d{2})");
+            } else if (b.isReturn()) {
+                no = "R" + find(b.body(), "^RETURN#[ \t]+(\\d{10,})[ \t]*$");
+                d = find(b.body(), "Date ?& ?Time[ \t]*(\\d{4}-\\d{2}-\\d{2})");
+            } else {
+                no = "V" + find(b.body(), "^VOID#[ \t]+(\\d{10,})[ \t]*$");
+                d = find(b.body(), "Date ?& ?Time[ \t]*(\\d{4}-\\d{2}-\\d{2})");
+            }
+            // 单号集合用于号段缺号检测，去重前先登记
+            Long n = numOf(b);
+            if (n != null) {
+                if (b.isSale()) siSeen.add(n);
+                else if (b.isReturn()) retSeen.add(n);
+                else voidSeen.add(n);
+            }
+            if (d == null || no.endsWith("null") || !seen.add(no) || g == null) continue;
+            DayTotal dt = day.computeIfAbsent(d, k -> new DayTotal());
+            if (b.isSale()) dt.sale += g;
+            else if (b.isReturn()) dt.ret += g;
+            else dt.voided += g;
+        }
+
+        int selfConsist = 0, netErr = 0, dayErr = 0, discErr = 0, adjErr = 0, vatAdjErr = 0;
+        int counterErr = 0, accErr = 0, siErr = 0, dateErr = 0, gapErr = 0;
+        int xGross = 0, xVoid = 0, xRet = 0;
+        List<String> problems = new ArrayList<>();
+
+        for (int i = 0; i < zs.size(); i++) {
+            Block z = zs.get(i);
+            String b = z.body();
+            String bd = z.businessDate() == null ? "?" : z.businessDate();
+            String tag = "Z@" + bd;
+
+            double gross = nz(amountOf(b, "GROSS AMOUNT:"));
+            double lessDisc = nz(amountOf(b, "LESS DISCOUNT:"));
+            double lessRet = nz(amountOf(b, "LESS RETURN:"));
+            double lessVoid = nz(amountOf(b, "LESS VOID:"));
+            double lessVatAdj = nz(amountOf(b, "LESS VAT ADJUSTMENT:"));
+            double net = nz(amountOf(b, "NET AMOUNT:"));
+            double otherDisc = nz(amountOf(b, "OTHER DISC:"));
+
+            // Z1 税分解
+            double bk = nz(amountOf(b, "VATABLE SALES:")) + nz(amountOf(b, "VAT AMOUNT:"))
+                + nz(amountOf(b, "VAT EXEMPT SALES:")) + nz(amountOf(b, "ZERO RATED SALES:"));
+            double bkExpect = gross - lessRet - lessVoid - lessVatAdj - otherDisc;
+            if (Math.abs(bk - bkExpect) > EPS) {
+                selfConsist++;
+                problems.add(String.format("[Z1 税分解] %s: 合计 %.2f，基数 %.2f，差 %.2f",
+                    tag, bk, bkExpect, bk - bkExpect));
+            }
+
+            // Z2 净额
+            double netExpect = gross - lessDisc - lessRet - lessVoid - lessVatAdj;
+            if (Math.abs(net - netExpect) > EPS) {
+                netErr++;
+                problems.add(String.format("[Z2 净额] %s: NET %.2f，应为 %.2f", tag, net, netExpect));
+            }
+
+            // Z3 日销 = 本期累计 - 上期累计
+            double present = nz(amountOf(b, "Present Accumulated Sales"));
+            double previous = nz(amountOf(b, "Previous Accumulated Sales:"));
+            double dayS = nz(amountOf(b, "Sales for the Day:"));
+            if (Math.abs(present - previous - dayS) > EPS) {
+                dayErr++;
+                problems.add(String.format("[Z3 日销] %s: %.2f-%.2f=%.2f，票面 %.2f",
+                    tag, present, previous, present - previous, dayS));
+            }
+
+            // Z4 折扣汇总
+            double discSum = 0;
+            for (String l : new String[]{"SC DISC:", "PWD DISC:", "NAAC DISC:", "SP DISC:",
+                                         "MOV DISC:", "OTHER DISC:"}) {
+                discSum += nz(amountOf(b, l));
+            }
+            if (Math.abs(discSum - lessDisc) > EPS) {
+                discErr++;
+                problems.add(String.format("[Z4 折扣汇总] %s: 明细合计 %.2f，LESS DISCOUNT %.2f",
+                    tag, discSum, lessDisc));
+            }
+
+            // Z5 销售调整
+            if (Math.abs(nz(amountOf(b, "RETURN:")) - lessRet) > EPS
+                || Math.abs(nz(amountOf(b, "VOID:")) - lessVoid) > EPS) {
+                adjErr++;
+                problems.add(String.format("[Z5 销售调整] %s: RETURN %.2f/%.2f  VOID %.2f/%.2f",
+                    tag, nz(amountOf(b, "RETURN:")), lessRet, nz(amountOf(b, "VOID:")), lessVoid));
+            }
+
+            // Z6 VAT 调整汇总
+            double vatAdjSum = 0;
+            for (String l : new String[]{"SC TRANS:", "PWD TRANS:", "NAAC TRANS:", "SP TRANS:",
+                                         "MOV TRANS:", "DIPLOMATIC TRANS:", "REG DISC TRANS:",
+                                         "ZERO-RATED TRANS:", "VAT ON RETURN:", "VAT ON VOID:",
+                                         "OTHER VAT Adjustment:"}) {
+                vatAdjSum += nz(amountOf(b, l));
+            }
+            if (Math.abs(vatAdjSum - lessVatAdj) > EPS) {
+                vatAdjErr++;
+                problems.add(String.format("[Z6 VAT调整] %s: 明细合计 %.2f，LESS VAT ADJUSTMENT %.2f",
+                    tag, vatAdjSum, lessVatAdj));
+            }
+
+            // Z10 日期段：同一营业日、00:00:00 ~ 23:59:59；报表时间不早于起始时间。
+            // 报表时间可以早于 23:59:59（当班提前结 Z 是正常操作），不做校验。
+            String start = find(b, "Start Date ?& ?Time:[ \t]*(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})");
+            String end = find(b, "End Date ?& ?Time:[ \t]*(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})");
+            String report = z.time();
+            if (start == null || end == null
+                || !start.substring(0, 10).equals(end.substring(0, 10))
+                || !start.endsWith("00:00:00") || !end.endsWith("23:59:59")
+                || (report != null && report.compareTo(start) < 0)) {
+                dateErr++;
+                problems.add(String.format("[Z10 日期段] %s: Start %s / End %s / Report %s",
+                    tag, start, end, report));
+            }
+
+            // Z11 号段缺号：Beg~End 之间的每个单号都应能在明细里找到
+            gapErr += checkGap(tag, b, "SI", siSeen, problems);
+            gapErr += checkGap(tag, b, "VOID", voidSeen, problems);
+            gapErr += checkGap(tag, b, "RETURN", retSeen, problems);
+
+            // Z12~Z14 与明细票交叉核对
+            DayTotal dt = day.getOrDefault(bd, new DayTotal());
+            if (Math.abs(gross - dt.sale) > EPS) {
+                xGross++;
+                problems.add(String.format("[Z12 毛额交叉] %s: Z %.2f，当日销售票合计 %.2f，差 %.2f",
+                    tag, gross, dt.sale, gross - dt.sale));
+            }
+            double retFull = lessRet + nz(amountOf(b, "VAT ON RETURN:"));
+            if (Math.abs(retFull - Math.abs(dt.ret)) > EPS) {
+                xRet++;
+                problems.add(String.format("[Z14 退货交叉] %s: Z 含税 %.2f，当日退货票合计 %.2f，差 %.2f",
+                    tag, retFull, Math.abs(dt.ret), retFull - Math.abs(dt.ret)));
+            }
+            double voidFull = lessVoid + nz(amountOf(b, "VAT ON VOID:"));
+            if (Math.abs(voidFull - Math.abs(dt.voided)) > EPS) {
+                xVoid++;
+                problems.add(String.format("[Z13 作废交叉] %s: Z 含税 %.2f，当日作废票合计 %.2f，差 %.2f",
+                    tag, voidFull, Math.abs(dt.voided), voidFull - Math.abs(dt.voided)));
+            }
+
+            // Z7/Z8/Z9 跨报表连续性
+            if (i > 0) {
+                Block p = zs.get(i - 1);
+                Integer zc = intOf(b, "Z Counter.");
+                Integer zp = intOf(p.body(), "Z Counter.");
+                if (zc != null && zp != null && zc != zp + 1) {
+                    counterErr++;
+                    problems.add(String.format("[Z7 计数器] %s: 上期 %d → 本期 %d，非连续", tag, zp, zc));
+                }
+                double prevPresent = nz(amountOf(p.body(), "Present Accumulated Sales"));
+                if (Math.abs(previous - prevPresent) > EPS) {
+                    accErr++;
+                    problems.add(String.format("[Z8 累计链] %s: 本期上期累计 %.2f ≠ 上期本期累计 %.2f",
+                        tag, previous, prevPresent));
+                }
+                // 当日有销售时 SI 必须向前推进；无销售时 Beg=End=上期 End 属正常
+                Long begSi = longOf(b, "Beg. SI #:");
+                Long prevEnd = longOf(p.body(), "End. SI #:");
+                if (begSi != null && prevEnd != null && prevEnd != 0 && dayS != 0 && begSi <= prevEnd) {
+                    siErr++;
+                    problems.add(String.format("[Z9 SI 段] %s: 上期 End %d ≥ 本期 Beg %d，号段重叠",
+                        tag, prevEnd, begSi));
+                }
+            }
+        }
+
+        List<Check> checks = List.of(
+            new Check("[Z] 税分解 = 毛额-退货-作废-VAT调整-普通折扣", selfConsist),
+            new Check("[Z] 净额 = 毛额-折扣-退货-作废-VAT调整", netErr),
+            new Check("[Z] 日销售 = 本期累计-上期累计", dayErr),
+            new Check("[Z] 折扣明细合计 = LESS DISCOUNT", discErr),
+            new Check("[Z] 销售调整 = LESS RETURN / LESS VOID", adjErr),
+            new Check("[Z] VAT 调整明细合计 = LESS VAT ADJUSTMENT", vatAdjErr),
+            new Check("[Z] Z Counter 逐张递增", counterErr),
+            new Check("[Z] 累计销售链首尾相接", accErr),
+            new Check("[Z] SI 号段不重叠", siErr),
+            new Check("[Z] 报表日期段规范", dateErr),
+            new Check("[Z] 号段内无缺号（SI/VOID/RETURN）", gapErr),
+            new Check("[Z] 毛额 = 当日销售票合计", xGross),
+            new Check("[Z] 作废额 = 当日作废票合计（含税）", xVoid),
+            new Check("[Z] 退货额 = 当日退货票合计（含税）", xRet)
+        );
+        printChecks(checks, problems);
+        System.out.printf("   ℹ 覆盖营业日 %d 天，Z Counter %s → %s%n",
+            zs.size(), intOf(zs.get(0).body(), "Z Counter."),
+            intOf(zs.get(zs.size() - 1).body(), "Z Counter."));
+        return checks;
+    }
+
+    /**
+     * 校验 Z 报表声明的单号区间在明细里没有缺号，返回缺号个数。
+     *
+     * <p><b>「当日无该类单据」的表示法</b>：Z 报表在当天没有作废/退货时，
+     * Beg 与 End 都印上次已用的号（计数器不推进），例如连续多天都是
+     * {@code VOID 14~14}，直到真的发生作废才跳到 {@code 18~19}。
+     * 这与 Z9 SI 号段检查里既有的约定一致（见该处注释：
+     * 「无销售时 Beg=End=上期 End 属正常」），此处补齐同样的判定。
+     *
+     * <p>因此 {@code beg == end} 且该号不在当日明细里时，视为当日无该类单据，
+     * 不计缺号；但仍打一条 ℹ 提示，避免真缺一张时被静默吞掉。
+     * 2026-08-31 生产核查踩过 —— 该门店 8/2~8/7 连续 6 天被误报 VOID#14 缺号。
+     */
+    private static int checkGap(
+            String tag, String b, String label, java.util.Set<Long> seen, List<String> problems) {
+        Long beg = longOf(b, "Beg. " + label + " #:");
+        Long end = longOf(b, "End. " + label + " #:");
+        if (beg == null || end == null || beg == 0 || end < beg) return 0;
+        if (beg.equals(end) && !seen.contains(beg)) {
+            problems.add(String.format("[Z11 无活动] %s: %s# 停在 %d 未推进，当日无%s单据",
+                tag, label, beg, "VOID".equals(label) ? "作废" : "退货"));
+            return 0;
+        }
+        int missing = 0;
+        for (long n = beg; n <= end; n++) {
+            if (!seen.contains(n)) {
+                missing++;
+                if (missing <= 5) {
+                    problems.add(String.format("[Z11 缺号] %s: 声明 %s# %d~%d，明细里找不到 %s#%d",
+                        tag, label, beg, end, label, n));
+                }
+            }
+        }
+        return missing;
+    }
+
+    /** 交易票自身的单号：销售取 SI，退货取 RETURN#，作废取 VOID#。 */
+    private static Long numOf(Block b) {
+        String s = b.isSale() ? find(b.body(), "^[ \t]*SI[ \t]+(\\d{10,})[ \t]*$")
+            : b.isReturn() ? find(b.body(), "^RETURN#[ \t]+(\\d{10,})[ \t]*$")
+            : find(b.body(), "^VOID#[ \t]+(\\d{10,})[ \t]*$");
+        return s == null ? null : Long.parseLong(s);
+    }
+
+    /** 取「标签 + 整数」行，单号有前导零，用 long 承接避免溢出。 */
+    private static Long longOf(String b, String label) {
+        String v = find(b, "^" + Pattern.quote(label) + "[ \t]+(\\d+)[ \t]*$");
+        return v == null ? null : Long.parseLong(v);
+    }
+
+    private static double nz(Double v) {
+        return v == null ? 0 : v;
+    }
+
+    /** 记录某项校验的最大偏差及其所在票，通过与否都记。 */
+    private static void track(double[] maxDiff, String[] tags, int i, double diff, String tag) {
+        if (diff > maxDiff[i]) {
+            maxDiff[i] = diff;
+            tags[i] = tag;
+        }
+    }
+
+    /** 打印一组校验项，附最多 10 条明细。 */
+    private static void printChecks(List<Check> checks, List<String> problems) {
+        for (Check c : checks) {
+            System.out.printf("  %s %-44s 异常 %d%n",
+                c.failures() == 0 ? "✅" : "❌", c.label(), c.failures());
+        }
+        if (!problems.isEmpty()) {
+            System.out.println("  明细（最多 10 条）:");
+            problems.stream().limit(10).forEach(p -> System.out.println("   " + p));
+            if (problems.size() > 10) {
+                System.out.println("   ... 另有 " + (problems.size() - 10) + " 条");
+            }
+        }
+    }
+
+    private EjAudit() {}
+}
