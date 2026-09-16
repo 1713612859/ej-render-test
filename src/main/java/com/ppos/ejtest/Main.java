@@ -12,23 +12,23 @@ public class Main {
     // ═══════════════════ 在这里改 ═══════════════════
 
     /** 导出起始日期（YYYY-MM-DD） */
-    private static final String START_DATE = "2026-08-01";
+    private static final String START_DATE = "2026-09-01";
 
-    /** 导出结束日期（YYYY-MM-DD，含当天） */
-    private static final String END_DATE = "2026-08-31";
+    /** 导出结束日期（YYYY-MM-DD，含当天）。注意每月天数，如 9 月只有 30 天 */
+    private static final String END_DATE = "2026-09-30";
 
     /** POS 设备 ID（sys_device.id）。填 null = 门店级聚合，查该门店所有设备。 */
-    private static final Long POS_ID = 205L;
+    private static final Long POS_ID = 1079635083984960L;
 
     /** 云端地址，不带结尾斜杠 */
-    private static final String BASE_URL = "http://47.80.75.159:8080";
+    private static final String BASE_URL = "https://devppos.luojia58.cn";
 
     /**
      * 登录后拿到的 JWT，不要带 "Bearer " 前缀。
      *
      * <p><b>留空 = 走本地 fixture/ 目录，不连网。</b>
      */
-    private static final String TOKEN = "Bearer eyJhbGciOiJIUzUxMiJ9.eyJ0ZW5hbnRfaWQiOjExNSwic3RvcmVfaWQiOjAsInVzZXJfdHlwZSI6IjAxIiwidXNlcl9pZCI6MjU5LCJ1c2VyX2tleSI6IjI0ZTg5YzY5LWM5YzctNGRkMC04ZWE3LTFiM2RlZWQ3NWE1MyIsImV4cCI6MTc4ODE4NTQxMCwidXNlcm5hbWUiOiJzYW5uaXVtYXN0ZXIiLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTE1In0.VBFZy0oa_rSFozesS68a6v8MVn5xd9V7rxpI51fBnNdgIjaPJNdd-1CpVm9EfRYnuMF9h6KaJj7E9JtibtO3Mw";
+    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA3NTI5MjAsImduIjowLCJpYXQiOjE3ODk1NDMzMjAsInNjb3BlIjoxNTEsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTUxIiwidGVuYW50X2lkIjoxNTEsInVzZXJJZCI6MTAwMDA3MywidXNlcl9pZCI6MTAwMDA3MywidXNlcl9rZXkiOiJfdG9rZW46MTAwMDA3MzoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJ0ZXN0bGVvMSJ9.TDb3sRNbS2V0ZFxaT08UE0FYjORyMlzJ6HFFO9c1GpE";
 
     // ═══════════════════ 以下不用改 ═══════════════════
 

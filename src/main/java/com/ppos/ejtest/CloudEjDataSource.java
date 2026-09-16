@@ -172,6 +172,7 @@ public class CloudEjDataSource implements EjDataSource {
     private String unwrap(String body) {
         JsonNode root = readTree(body);
         JsonNode code = root.get("code");
+
         if (code != null && code.asInt() != 200) {
             int c = code.asInt();
             String msg = text(root, "msg", "");
