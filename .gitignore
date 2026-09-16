@@ -4,3 +4,9 @@ target/
 # EJ 导出产物：包含真实门店的税务登记信息与逐笔经营数据，
 # 且单次导出可达数十 MB，一律不入库。需要样本请用 fixture/ 下的脱敏数据。
 out/
+
+# Gmail 发件凭据（含应用专用密码），只提交 example 模板，真实文件不入库
+gmail.properties
+
+# ZCode 会话目录
+.zcode/
