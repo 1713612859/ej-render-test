@@ -36,7 +36,22 @@ public class TxtToPdf {
 
     private static final float FONT_SIZE = 8f;
     private static final float LEADING = 9.6f;
+    /** 左右边距。 */
     private static final float MARGIN = 40f;
+    /**
+     * 上下边距。EJ 是连续纸带，分页处上下边距相加就是页间视觉空白。
+     * 下限由字体上伸部（约 7pt @ 8pt 字号）决定：首行基线距页顶不足字高会把
+     * 首行字形削顶（4pt 时实测削顶），10pt ≈ 3.5mm 安全且页缝最小。
+     */
+    private static final float MARGIN_V = 10f;
+    /** 页宽：A4 宽。 */
+    private static final float PAGE_W = 595f;
+    /**
+     * 单页页高上限 = PDF 规格允许的最大边长 14,400pt（200 英寸 ≈ 5.08m）。
+     * EJ 按"连续纸带"出 PDF：内容能装进一页就只有一页（阅读器零页缝）；
+     * 装不下才按此上限分页，把页缝压到最少（月度 EJ 约 8 页，缝在每 5m 纸带处）。
+     */
+    private static final float PAGE_H_MAX = 14400f;
 
     /** 优先查找的等宽 CJK 字体文件。 */
     private static final Path[] PREFERRED_TTF = {
@@ -67,17 +82,21 @@ public class TxtToPdf {
     private static void render(PDDocument doc, String text, FontChoice choice) throws IOException {
         String[] lines = text.replace("﻿", "").split("\n", -1);
 
-        PDPage page = newPage(doc);
+        // 页高按内容量决定：装得下就单页（无任何页缝），装不下按规格上限分页
+        float needed = lines.length * LEADING + 2 * MARGIN_V;
+        float pageH = Math.min(PAGE_H_MAX, needed);
+
+        PDPage page = newPage(doc, pageH);
         PDPageContentStream cs = beginPage(doc, page, choice.font);
-        float y = page.getMediaBox().getHeight() - MARGIN;
+        float y = pageH - MARGIN_V;
 
         for (String line : lines) {
-            if (y < MARGIN) {
+            if (y < MARGIN_V) {
                 cs.endText();
                 cs.close();
-                page = newPage(doc);
+                page = newPage(doc, pageH);
                 cs = beginPage(doc, page, choice.font);
-                y = page.getMediaBox().getHeight() - MARGIN;
+                y = pageH - MARGIN_V;
             }
             cs.showText(choice.cjkCapable ? line : toAscii(line));
             cs.newLineAtOffset(0, -LEADING);
@@ -158,8 +177,8 @@ public class TxtToPdf {
 
     // ── 内部工具 ──────────────────────────────────────────
 
-    private static PDPage newPage(PDDocument doc) {
-        PDPage page = new PDPage(PDRectangle.A4);
+    private static PDPage newPage(PDDocument doc, float pageH) {
+        PDPage page = new PDPage(new PDRectangle(PAGE_W, pageH));
         doc.addPage(page);
         return page;
     }
@@ -170,7 +189,7 @@ public class TxtToPdf {
         cs.beginText();
         cs.setFont(font, FONT_SIZE);
         cs.setLeading(LEADING);
-        cs.newLineAtOffset(MARGIN, page.getMediaBox().getHeight() - MARGIN);
+        cs.newLineAtOffset(MARGIN, page.getMediaBox().getHeight() - MARGIN_V);
         return cs;
     }
 
