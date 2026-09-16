@@ -6,20 +6,27 @@
  *  A. 应付   Amount(Due) = Gross - LESS 12% VAT - Discount + Add 12% VAT + Service Charge
  *            注意 Service Charge 在销售票上带百分比 "Service Charge(10%)"，
  *            在作废/退货票上不带 —— 正则必须两者都吃。
+ *            退货/作废票整体为负数：LESS VAT / Discount 行印正值（模板取绝对值），
+ *            对总额是"冲回"(加)；SC 行印带符号负值。即各调整项方向与销售票相反。
  *
- *  B. 税分解 VATable + VAT + Exempt + Zero = Gross - LESS VAT + Add VAT
- *            **不减折扣**。SC/PWD 的口径是先剥 VAT（336→300）再对 300 打 20%，
- *            所以税分解的基数是"剥完 VAT 的毛额"，折扣不参与。
+ *  B. 税分解 VATable + VAT + Exempt + Zero = Gross - LESS VAT + Add VAT（再冲减普通折扣）
+ *            **不减政府折扣**。SC/PWD 的口径是先剥 VAT（336→300）再对 300 打 20%，
+ *            所以税分解的基数是"剥完 VAT 的毛额"，政府折扣不参与；
+ *            退货/作废票符号方向同样整体反转（Gross + LessVAT ± 普通折扣）。
  *
  *  C. 收付   支付合计 - 找零 = 应付
  *            **仅对销售票成立**。voidReceipt.ts / returnReceipt.ts 模板不输出
  *            CHANGE 行（已核对源码），作废/退货票的支付行是原单全额冲销，
  *            与应付天然不等，不参与本项校验。
  *
- *  D. 行合计 各商品行 Amount 之和 = Gross Sales
- *            退货票会列出原单全部商品（含未退的），部分退货时不等，单独统计。
+ *  D. 行合计 销售票：各商品行 Amount 之和 = Gross Sales（行价 = 原价）。
+ *            退货/作废票：行价 = 实退/实冲净额（折扣与 VAT 调整已摊进行价），
+ *            故 行合计 + Service Charge = Amount（实退总额）。
+ *
+ * 重打单与后厨/BILLING 辅助单据不参与校验（见 audit-ignore.mjs）。
  */
 import { readFileSync } from 'node:fs';
+import { isIgnored } from './audit-ignore.mjs';
 
 const file = process.argv[2];
 const text = readFileSync(file, 'utf8').replace(/^﻿/, '');
@@ -69,14 +76,14 @@ const PAY_METHODS = [
   'MEMBER BALANCE',
 ];
 
-const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0, dPartial: 0 };
+const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0 };
 const problems = [];
 
 for (const [idx, b] of blocks.entries()) {
   const isSale = /^ *SALES INVOICE *$/m.test(b);
   const isRet = /^ *RETURN TRANSACTION *$/m.test(b);
   const isVoid = /^ *VOID TRANSACTION *$/m.test(b);
-  if (!isSale && !isRet && !isVoid) continue;
+  if ((!isSale && !isRet && !isVoid) || isIgnored(b)) continue;
 
   const type = isSale ? 'SALE' : isRet ? 'RETURN' : 'VOID';
   stats[isSale ? 'sale' : isRet ? 'ret' : 'void']++;
@@ -95,27 +102,28 @@ for (const [idx, b] of blocks.entries()) {
   const govDisc = sumAll(/^Discount \d+%\s+(-?[\d,]+\.\d{2})\s*$/gm);
   const regDisc = sumAll(/^Regular Discount\s+(-?[\d,]+\.\d{2})\s*$/gm);
 
-  // 退货/作废票上金额整体取负，但折扣行仍印正数(模板取绝对值)，
-  // 所以折扣对总额是"冲回"(加)而非"扣减"(减)。
-  const ds = isSale ? -1 : +1;
+  // 符号口径：销售票 Gross - LessVAT + AddVAT - Disc + SC；
+  // 退货/作废票整体为负，各调整项方向全部反转 —— LessVAT/Disc 行印正值起
+  // "冲回"作用(加)，SC 行印带符号负值。s = +1 销售 / -1 退货·作废。
+  const s = isSale ? 1 : -1;
 
   // ── A 应付 ──
   if (gross !== null && due !== null) {
-    const expect = gross - lessVat + addVat + ds * (govDisc + regDisc) + svc;
+    const expect = gross - s * lessVat + s * addVat - s * (govDisc + regDisc) + svc;
     if (Math.abs(expect - due) > EPS) {
       stats.a++;
       if (stats.a <= 10) {
         problems.push(
-          `[A 应付] ${tag}: Gross ${gross} - LessVAT ${lessVat} + AddVAT ${addVat}` +
-            ` ${ds > 0 ? '+' : '-'} Disc ${(govDisc + regDisc).toFixed(2)} + SC ${svc}` +
-            ` = ${expect.toFixed(2)}，票面 ${due}`,
+          `[A 应付] ${tag}: Gross ${gross} ${s > 0 ? '-' : '+'} LessVAT ${lessVat}` +
+            ` ${s > 0 ? '+' : '-'} AddVAT ${addVat} ${s > 0 ? '-' : '+'} Disc ${(govDisc + regDisc).toFixed(2)}` +
+            ` + SC ${svc} = ${expect.toFixed(2)}，票面 ${due}`,
         );
       }
     }
   }
 
   // ── B 税分解 ──
-  // 基数 = 毛额 - LessVAT + AddVAT，再冲减【普通折扣】。
+  // 基数 = 毛额 - LessVAT + AddVAT，再冲减【普通折扣】（退货/作废方向反转）。
   // 政府折扣(Discount NN%)不参与：SC/PWD 的口径是先剥 VAT 再打折，
   // 剥 VAT 已由 LessVAT 体现，税分解反映的就是剥完 VAT 的额度。
   const vatable = amountOf(b, 'VATable Sales');
@@ -123,7 +131,7 @@ for (const [idx, b] of blocks.entries()) {
   const exempt = amountOf(b, 'VAT Exempt Sales');
   const zero = amountOf(b, 'Zero Rated Sales');
   if ([vatable, vat, exempt, zero, gross].every((v) => v !== null)) {
-    const base = gross - lessVat + addVat + ds * regDisc;
+    const base = gross - s * lessVat + s * addVat - s * regDisc;
     const sum = vatable + vat + exempt + zero;
     if (Math.abs(sum - base) > EPS) {
       stats.b++;
@@ -161,23 +169,25 @@ for (const [idx, b] of blocks.entries()) {
 
   // ── D ──
   // 数量允许小数（称重/半份商品印 0.5、0.38），与 audit-content.mjs 的 ITEM_ROW 同口径。
+  // 销售票行价 = 原价，对比 Gross；退货/作废票行价 = 实退净额（折扣与 VAT 调整
+  // 已摊进行价），故 行合计 + SC = Amount。
   const rows = [
     ...b.matchAll(
       /^\s+-?\d+(?:\.\d+)?\s{2,}-?[\d,]+\.\d{2}\s{2,}(-?[\d,]+\.\d{2})\s*[VEZ]?\s*$/gm,
     ),
   ];
-  if (rows.length && gross !== null) {
+  if (rows.length && gross !== null && due !== null) {
     const sum = rows.reduce((a, m) => a + num(m[1]), 0);
-    if (Math.abs(sum - gross) > EPS) {
-      if (isRet) {
-        stats.dPartial++; // 退货票列原单全部商品，部分退货时不等，属预期
-      } else {
-        stats.d++;
-        if (stats.d <= 10) {
-          problems.push(
-            `[D 行合计] ${tag}: ${rows.length} 行合计 ${sum.toFixed(2)}，Gross ${gross}`,
-          );
-        }
+    const expect = isSale ? gross : due - svc;
+    if (Math.abs(sum - expect) > EPS) {
+      stats.d++;
+      if (stats.d <= 10) {
+        problems.push(
+          `[D 行合计] ${tag}: ${rows.length} 行合计 ${sum.toFixed(2)}，应等于 ` +
+            (isSale
+              ? `Gross ${gross}`
+              : `实退 ${(due - svc).toFixed(2)}（Amount ${due} − SC ${svc}）`),
+        );
       }
     }
   }
@@ -188,15 +198,14 @@ console.log(`\n${line}`);
 console.log(` 金额勾稽 — 销售 ${stats.sale} / 退货 ${stats.ret} / 作废 ${stats.void} 张`);
 console.log(line);
 const rowsOut = [
-  ['A 应付 = 毛额 - LessVAT - 折扣 + AddVAT + 服务费', stats.a],
-  ['B 税分解合计 = 毛额 - LessVAT + AddVAT', stats.b],
+  ['A 应付勾稽（销售/退货·作废符号口径见文件头）', stats.a],
+  ['B 税分解合计 = 毛额 ∓ LessVAT ± AddVAT ∓ 普通折扣', stats.b],
   ['C 支付 - 找零 = 应付（仅销售票）', stats.c],
-  ['D 商品行合计 = Gross Sales（退货票除外）', stats.d],
+  ['D 行合计 = Gross(销售) / 实退−SC(退货·作废)', stats.d],
 ];
 for (const [label, n] of rowsOut) {
   console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(48)} 异常 ${n}`);
 }
-console.log(`  ℹ  退货票行合计 ≠ Gross 的 ${stats.dPartial} 张（列出原单全部商品，部分退货属预期）`);
 if (problems.length) {
   console.log('\n明细:');
   problems.forEach((p) => console.log('   ' + p));

@@ -3,6 +3,7 @@
  * 用法: node js/audit-ej.mjs <txt路径>
  */
 import { readFileSync } from 'node:fs';
+import { isAux, isReprint, isIgnored } from './audit-ignore.mjs';
 
 const file = process.argv[2];
 if (!file) {
@@ -70,19 +71,26 @@ function businessDate(b) {
   return m ? m[1] : null;
 }
 
-const items = blocks.map((b, i) => ({
-  idx: i,
-  ...classify(b),
-  time: eventTime(b),
-  bd: businessDate(b),
-  body: b,
-}));
+// 重打单与后厨/BILLING 辅助单据不参与校验（口径见 audit-ignore.mjs）
+const nReprint = blocks.filter(isReprint).length;
+const nAux = blocks.filter(isAux).length;
+const items = blocks
+  .map((b, i) => ({ b, i }))
+  .filter(({ b }) => !isIgnored(b))
+  .map(({ b, i }) => ({
+    idx: i,
+    ...classify(b),
+    time: eventTime(b),
+    bd: businessDate(b),
+    body: b,
+  }));
 
 console.log(`\n${'='.repeat(58)}`);
 console.log(` 文件      ${file.split(/[\\/]/).pop()}`);
 console.log(` 大小      ${(raw.length / 1024).toFixed(0)} KB / ${text.split('\n').length} 行`);
 console.log(` BOM       ${hadBom ? '✅ 有 (UTF-8 BOM)' : '❌ 缺失'}`);
-console.log(` 小票块数  ${blocks.length}`);
+console.log(` 小票块数  ${blocks.length}（校验 ${items.length}）`);
+console.log(` 忽略      重打 ${nReprint} 张 / 后厨·点菜·BILLING 等辅助单据 ${nAux} 张`);
 console.log('='.repeat(58));
 
 // ── 1. 类型分布 ──
@@ -109,7 +117,7 @@ for (let i = 1; i < timed.length; i++) {
   }
 }
 console.log(
-  `   带时间戳的票 ${timed.length}/${blocks.length}` +
+  `   带时间戳的票 ${timed.length}/${items.length}` +
     `   逆序 ${orderErr} 处 ${orderErr === 0 ? '✅' : '❌'}`,
 );
 
@@ -165,18 +173,42 @@ for (const p of ['null', 'undefined', 'NaN', 'TBD', 'Infinity', '[object', '{{',
 }
 
 // ── 6. 排版 ──
+// 行宽只校验交易票的非商品名区域：商品名/备注是客户数据（菜名、口味、留言），
+// 长度不受模板控制，超宽不算缺陷；后厨类单据与重打单整体不参与。
 console.log('\n【6】排版（行宽 48）');
-const lines = text.split('\n');
-const over = lines
-  .map((l, i) => ({ i: i + 1, w: width(l), l }))
-  .filter((x) => x.w > 48);
-console.log(`   超宽行 ${over.length}`);
+const HEADER_ROW = /^Description\s+Qty\s+U\.Price\s+Amount\s*$/;
+const SEP_ROW = /^-{10,}$/;
+const over = [];
+let nameOver = 0;
+let lineNo = 1;
+for (const b of blocks) {
+  const lines = b.split('\n');
+  const skip = isIgnored(b);
+  let inItems = false;
+  let seenContent = false;
+  for (const l of lines) {
+    if (HEADER_ROW.test(l)) {
+      inItems = true;
+      seenContent = false;
+    } else if (inItems && SEP_ROW.test(l)) {
+      if (seenContent) inItems = false; // 表头下紧跟的分隔线不算商品区结束
+    } else if (inItems && l.trim()) {
+      seenContent = true;
+    }
+    if (!skip && width(l) > 48) {
+      if (inItems || /Memo|Spice|Spicy|辣/.test(l)) nameOver++;
+      else over.push({ i: lineNo, w: width(l), l });
+    }
+    lineNo++;
+  }
+  lineNo++; // 块分隔 "\n   \n" 的 3 空格行
+}
+console.log(
+  `   超宽行 ${over.length}${over.length === 0 ? ' ✅' : ''}` +
+    `，另有商品名/备注等客户数据超宽 ${nameOver} 行（不计）`,
+);
 for (const o of over.slice(0, 5)) {
   console.log(`     L${o.i} 宽${o.w}: ${o.l.slice(0, 44)}...`);
-}
-if (over.length) {
-  const memo = over.filter((o) => /Memo/.test(o.l) || /Spice|Spicy|辣/.test(o.l)).length;
-  console.log(`     其中口味备注行 ${memo} 条（已知的刻意行为，对齐 AAPP，非缺陷）`);
 }
 
 // ── 7. 结构完整性 ──

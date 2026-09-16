@@ -19,8 +19,11 @@
  *                  退货票 RETURN# / SI# / Date&Time，作废票 VOID# / Sales SI# / Date&Time。
  *
  * 用法: node js/audit-content.mjs <txt路径>
+ *
+ * 重打单与后厨/BILLING 辅助单据不参与校验（见 audit-ignore.mjs）。
  */
 import { readFileSync } from 'node:fs';
+import { isIgnored } from './audit-ignore.mjs';
 
 const file = process.argv[2];
 if (!file) {
@@ -125,7 +128,7 @@ for (const [idx, b] of blocks.entries()) {
   const isSale = /^ *SALES INVOICE *$/m.test(b);
   const isRet = /^ *RETURN TRANSACTION *$/m.test(b);
   const isVoid = /^ *VOID TRANSACTION *$/m.test(b);
-  if (!isSale && !isRet && !isVoid) continue;
+  if ((!isSale && !isRet && !isVoid) || isIgnored(b)) continue;
 
   const type = isSale ? 'SALE' : isRet ? 'RETURN' : 'VOID';
   stats[isSale ? 'sale' : isRet ? 'ret' : 'void']++;

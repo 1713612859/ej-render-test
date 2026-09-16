@@ -19,6 +19,9 @@ import java.util.stream.Collectors;
  * <p>与 {@code js/audit-ej.mjs}、{@code js/audit-content.mjs}、{@code js/audit-amounts.mjs}
  * 同口径；JS 版留着做交叉验证，两边结论应当一致。
  *
+ * <p>忽略口径（与 {@code js/audit-ignore.mjs} 同步）：REPRINT 重打单、后厨类辅助单据
+ * （厨单/点菜单/加菜单/转桌单/退菜单）、BILLING 预结单与日/时销报表不参与校验。
+ *
  * <p>用法：
  * <pre>
  *   mvn -q exec:java -Dexec.mainClass=com.ppos.ejtest.EjAudit
@@ -75,6 +78,27 @@ public class EjAudit {
         "MEMBER BALANCE",
     };
 
+    // ── 忽略口径（与 js/audit-ignore.mjs 同步）──
+    // REPRINT 重打单内容与原张一致，只会带来单号重复/时间逆序/Z 链断裂的误报；
+    // 后厨类单据（厨单/点菜单/加菜单/转桌单/退菜单）与 BILLING 预结单、日/时销报表
+    // 无金额、无税号头，名称行也不受发票模板排版约束。
+    private static final String[] AUX_TITLES = {
+        "ORDER SLIP", "KITCHEN DOCKET", "ADDITIONAL", "Transfer Slip",
+        "THIS IS NOT A SALES INVOICE", "DAILY SALES REPORT", "HOURLY SALES REPORT",
+        "VOID \\(退菜\\)",
+    };
+
+    private static boolean isAux(String body) {
+        for (String t : AUX_TITLES) {
+            if (has(body, "^ *" + t + "(（[^）]*）|\\([^)]*\\))? *$")) return true;
+        }
+        return false;
+    }
+
+    private static boolean isReprint(String body) {
+        return has(body, "^ *REPRINT *$");
+    }
+
     /** 一张小票。 */
     private record Block(int idx, String body, String type, int seq, String time, String businessDate) {
         boolean isSale() { return "SALES INVOICE".equals(type); }
@@ -107,7 +131,17 @@ public class EjAudit {
         boolean hadBom = !raw.isEmpty() && raw.charAt(0) == '﻿';
         String text = hadBom ? raw.substring(1) : raw;
 
-        List<Block> blocks = parse(text);
+        // 重打单与后厨/BILLING 辅助单据不参与校验，数量另行提示
+        int nReprint = 0;
+        int nAux = 0;
+        List<Block> blocks = new ArrayList<>();
+        for (Block b : parse(text)) {
+            if (isReprint(b.body())) { nReprint++; continue; }
+            if (isAux(b.body())) { nAux++; continue; }
+            blocks.add(b);
+        }
+        System.out.printf("忽略  重打 %d 张 / 后厨·点菜·BILLING 等辅助单据 %d 张（不参与校验）%n",
+            nReprint, nAux);
 
         List<Check> all = new ArrayList<>();
         all.addAll(auditStructure(file, raw, text, blocks, hadBom));
@@ -365,18 +399,40 @@ public class EjAudit {
         }
         System.out.printf(" 脏值扫描  %s%n", dirty == 0 ? "全 0 ✅" : dirtyLine + "⚠");
 
-        // 排版：超宽行。口味备注超宽是对齐 AAPP 的刻意行为，单独计数不算失败。
-        String[] lines = text.split("\n", -1);
+        // 排版：超宽行。行宽只校验交易票的非商品名区域 —— 商品名/备注是客户数据
+        // （菜名、口味、留言），长度不受模板控制，超宽不算缺陷；忽略掉的单据
+        // （重打/后厨/BILLING）整体不参与。
         List<String> over = new ArrayList<>();
-        for (int i = 0; i < lines.length; i++) {
-            if (width(lines[i]) > LINE_WIDTH) over.add("L" + (i + 1) + " 宽" + width(lines[i]) + ": " + lines[i]);
+        int nameOver = 0;
+        Pattern headerRow = Pattern.compile("^Description[ \t]+Qty[ \t]+U\\.Price[ \t]+Amount[ \t]*$");
+        int lineNo = 1;
+        for (Block blk : blocks) {
+            String[] ls = blk.body().split("\n", -1);
+            boolean inItems = false;
+            boolean seenContent = false;
+            for (String l : ls) {
+                if (headerRow.matcher(l).matches()) {
+                    inItems = true;
+                    seenContent = false;
+                } else if (inItems && SEP.matcher(l).matches()) {
+                    if (seenContent) inItems = false; // 表头下紧跟的分隔线不算商品区结束
+                } else if (inItems && !l.isBlank()) {
+                    seenContent = true;
+                }
+                if (width(l) > LINE_WIDTH) {
+                    if (inItems || l.contains("Memo") || l.contains("Spice")
+                        || l.contains("Spicy") || l.contains("辣")) {
+                        nameOver++;
+                    } else {
+                        over.add("L" + lineNo + " 宽" + width(l) + ": " + l);
+                    }
+                }
+                lineNo++;
+            }
+            lineNo++; // 块分隔 "\n   \n" 的 3 空格行
         }
-        long memo = over.stream()
-            .filter(s -> s.contains("Memo") || s.contains("Spice") || s.contains("Spicy") || s.contains("辣"))
-            .count();
-        int realOver = over.size() - (int) memo;
-        System.out.printf(" 排版      超宽行 %d（其中口味备注 %d 条属刻意行为），实际超宽 %d%n",
-            over.size(), memo, realOver);
+        System.out.printf(" 排版      超宽行 %d%s，另有商品名/备注等客户数据超宽 %d 行（不计）%n",
+            over.size(), over.isEmpty() ? " ✅" : "", nameOver);
         for (String s : over.stream().limit(5).toList()) {
             System.out.println("   " + s.substring(0, Math.min(60, s.length())));
         }
@@ -401,7 +457,7 @@ public class EjAudit {
             new Check("[结构] 日期归属无越界", oob),
             new Check("[结构] 双联配对", pairErr),
             new Check("[结构] 无脏值", dirty),
-            new Check("[结构] 行宽 ≤ " + LINE_WIDTH + "（口味备注除外）", realOver),
+            new Check("[结构] 行宽 ≤ " + LINE_WIDTH + "（商品名/备注等客户数据除外）", over.size()),
             new Check("[结构] 头部/尾部/金额行完整", noHeader + noFooter + emptyAmount)
         );
     }
@@ -645,7 +701,7 @@ public class EjAudit {
         System.out.printf(" 【三】金额勾稽（容差 %.2f）%n", EPS);
         System.out.println(SEP_LINE);
 
-        int a = 0, bCnt = 0, c = 0, d = 0, dPartial = 0;
+        int a = 0, bCnt = 0, c = 0, d = 0;
         List<String> problems = new ArrayList<>();
 
         // 各项的最大偏差：即使全部落在容差内，也要看清离阈值还有多远。
@@ -674,9 +730,10 @@ public class EjAudit {
             double govDisc = sumAll(b, "^Discount \\d+%[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
             double regDisc = sumAll(b, "^Regular Discount[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
 
-            // 退货/作废票金额整体取负，但折扣行仍印正数（模板取绝对值），
-            // 所以折扣对总额是「冲回」(加) 而非「扣减」(减)。
-            int ds = blk.isSale() ? -1 : 1;
+            // 符号口径：销售票 Gross - LessVAT + AddVAT - Disc + SC；
+            // 退货/作废票整体为负，各调整项方向全部反转 —— LessVAT/Disc 行印正值起
+            // 「冲回」作用(加)，SC 行印带符号负值。s = +1 销售 / -1 退货·作废。
+            double s = blk.isSale() ? 1 : -1;
 
             // 金额小计
             if (gross != null) {
@@ -694,24 +751,25 @@ public class EjAudit {
 
             // A 应付
             if (gross != null && due != null) {
-                double expect = gross - lessVat + addVat + ds * (govDisc + regDisc) + svc;
+                double expect = gross - s * lessVat + s * addVat - s * (govDisc + regDisc) + svc;
                 track(maxDiff, maxDiffTag, 0, Math.abs(expect - due), tag);
                 if (Math.abs(expect - due) > EPS) {
                     a++;
-                    problems.add(String.format("[A 应付] %s: Gross %.2f - LessVAT %.2f + AddVAT %.2f "
+                    problems.add(String.format("[A 应付] %s: Gross %.2f %s LessVAT %.2f %s AddVAT %.2f "
                         + "%s Disc %.2f + SC %.2f = %.2f，票面 %.2f",
-                        tag, gross, lessVat, addVat, ds > 0 ? "+" : "-", govDisc + regDisc, svc, expect, due));
+                        tag, gross, s > 0 ? "-" : "+", lessVat, s > 0 ? "+" : "-", addVat,
+                        s > 0 ? "-" : "+", govDisc + regDisc, svc, expect, due));
                 }
             }
 
-            // B 税分解：基数 = 毛额 - LessVAT + AddVAT，再冲减【普通折扣】。
+            // B 税分解：基数 = 毛额 - LessVAT + AddVAT，再冲减【普通折扣】（退货/作废方向反转）。
             // 政府折扣不参与：SC/PWD 是先剥 VAT 再打折，剥 VAT 已由 LessVAT 体现。
             Double vatable = amountOf(b, "VATable Sales");
             Double vat = amountOf(b, "VAT Amount (12%)");
             Double exempt = amountOf(b, "VAT Exempt Sales");
             Double zero = amountOf(b, "Zero Rated Sales");
             if (vatable != null && vat != null && exempt != null && zero != null && gross != null) {
-                double base = gross - lessVat + addVat + ds * regDisc;
+                double base = gross - s * lessVat + s * addVat - s * regDisc;
                 double sum = vatable + vat + exempt + zero;
                 track(maxDiff, maxDiffTag, 1, Math.abs(sum - base), tag);
                 if (Math.abs(sum - base) > EPS) {
@@ -739,32 +797,31 @@ public class EjAudit {
                 }
             }
 
-            // D 行合计。退货票列原单全部商品，部分退货时不等，属预期。
+            // D 行合计。销售票行价 = 原价，对比 Gross；退货/作废票行价 = 实退净额
+            // （折扣与 VAT 调整已摊进行价），故 行合计 + SC = Amount。
             List<String> region = itemRegion(b);
             List<Item> items = region == null ? List.of() : parseItems(region);
-            if (!items.isEmpty() && gross != null) {
+            if (!items.isEmpty() && gross != null && due != null) {
                 double sum = items.stream().mapToDouble(Item::amount).sum();
-                if (!blk.isReturn()) track(maxDiff, maxDiffTag, 3, Math.abs(sum - gross), tag);
-                if (Math.abs(sum - gross) > EPS) {
-                    if (blk.isReturn()) {
-                        dPartial++;
-                    } else {
-                        d++;
-                        problems.add(String.format("[D 行合计] %s: %d 行合计 %.2f，Gross %.2f",
-                            tag, items.size(), sum, gross));
-                    }
+                double expect = blk.isSale() ? gross : due - svc;
+                track(maxDiff, maxDiffTag, 3, Math.abs(sum - expect), tag);
+                if (Math.abs(sum - expect) > EPS) {
+                    d++;
+                    problems.add(String.format("[D 行合计] %s: %d 行合计 %.2f，应等于 %s",
+                        tag, items.size(), sum, blk.isSale()
+                            ? String.format("Gross %.2f", gross)
+                            : String.format("实退 %.2f（Amount %.2f - SC %.2f）", due - svc, due, svc)));
                 }
             }
         }
 
         List<Check> checks = List.of(
-            new Check("[金额] A 应付 = 毛额-LessVAT-折扣+AddVAT+服务费", a),
-            new Check("[金额] B 税分解合计 = 毛额-LessVAT+AddVAT", bCnt),
+            new Check("[金额] A 应付勾稽（销售/退货·作废符号口径见文件头）", a),
+            new Check("[金额] B 税分解合计 = 毛额∓LessVAT±AddVAT∓普通折扣", bCnt),
             new Check("[金额] C 支付-找零 = 应付（仅销售票）", c),
-            new Check("[金额] D 商品行合计 = Gross（退货票除外）", d)
+            new Check("[金额] D 行合计 = Gross(销售) / 实退-SC(退货·作废)", d)
         );
         printChecks(checks, problems);
-        System.out.printf("   ℹ 退货票行合计 ≠ Gross 的 %d 张（列出原单全部商品，部分退货属预期）%n", dPartial);
 
         System.out.println();
         System.out.println(" 各项最大偏差（容差 " + EPS + "，越接近容差越值得复核）");
@@ -799,7 +856,8 @@ public class EjAudit {
      * <ul>
      *   <li>税分解基数要再扣 OTHER DISC（普通折扣），政府折扣不扣 —— 与单票 B 项同源；
      *   <li>LESS RETURN / LESS VOID 是<b>剥完 VAT</b> 的净额，VAT 部分记在
-     *       VAT ON RETURN / VAT ON VOID，两者相加才等于明细票毛额；
+     *       VAT ON RETURN / VAT ON VOID，两者相加等于明细票「Gross + LessVAT」
+     *       （即该票税分解四项之和；退货/作废票的 LessVAT 行印正值冲回）；
      *   <li>当日无销售时 Beg./End. SI # 停在上一期的 End，不算断号。
      * </ul>
      */
@@ -853,10 +911,13 @@ public class EjAudit {
                 else voidSeen.add(n);
             }
             if (d == null || no.endsWith("null") || !seen.add(no) || g == null) continue;
+            // 含税口径：退货/作废票的税分解合计 = Gross + LessVAT（LessVAT 行印正值冲回），
+            // Z 报表的 LESS RETURN/VOID + VAT ON RETURN/VOID 对应的正是这个含税值
+            double lessVat = sumAll(b.body(), "^LESS 12% VAT[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
             DayTotal dt = day.computeIfAbsent(d, k -> new DayTotal());
             if (b.isSale()) dt.sale += g;
-            else if (b.isReturn()) dt.ret += g;
-            else dt.voided += g;
+            else if (b.isReturn()) dt.ret += g + lessVat;
+            else dt.voided += g + lessVat;
         }
 
         int selfConsist = 0, netErr = 0, dayErr = 0, discErr = 0, adjErr = 0, vatAdjErr = 0;
