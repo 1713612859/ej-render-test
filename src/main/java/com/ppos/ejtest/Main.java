@@ -18,7 +18,8 @@ public class Main {
     private static final String END_DATE = "2026-09-30";
 
     /** POS 设备 ID（sys_device.id）。填 null = 门店级聚合，查该门店所有设备。 */
-    private static final Long POS_ID = 1079635083984960L;
+//    private static final Long POS_ID = 1079635083984960L;
+    private static final Long POS_ID = 205L;
 
     /** 云端地址，不带结尾斜杠 */
     private static final String BASE_URL = "https://devppos.luojia58.cn";
@@ -28,8 +29,13 @@ public class Main {
      *
      * <p><b>留空 = 走本地 fixture/ 目录，不连网。</b>
      */
-    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA3NTI5MjAsImduIjowLCJpYXQiOjE3ODk1NDMzMjAsInNjb3BlIjoxNTEsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTUxIiwidGVuYW50X2lkIjoxNTEsInVzZXJJZCI6MTAwMDA3MywidXNlcl9pZCI6MTAwMDA3MywidXNlcl9rZXkiOiJfdG9rZW46MTAwMDA3MzoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJ0ZXN0bGVvMSJ9.TDb3sRNbS2V0ZFxaT08UE0FYjORyMlzJ6HFFO9c1GpE";
+//    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA3NTI5MjAsImduIjowLCJpYXQiOjE3ODk1NDMzMjAsInNjb3BlIjoxNTEsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTUxIiwidGVuYW50X2lkIjoxNTEsInVzZXJJZCI6MTAwMDA3MywidXNlcl9pZCI6MTAwMDA3MywidXNlcl9rZXkiOiJfdG9rZW46MTAwMDA3MzoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJ0ZXN0bGVvMSJ9.TDb3sRNbS2V0ZFxaT08UE0FYjORyMlzJ6HFFO9c1GpE";
 
+
+
+
+    // sanniu test
+    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4MjIwODgsImduIjowLCJpYXQiOjE3ODk2MTI0ODgsInNjb3BlIjoxMTUsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTE1IiwidGVuYW50X2lkIjoxMTUsInVzZXJJZCI6MjU5LCJ1c2VyX2lkIjoyNTksInVzZXJfa2V5IjoiX3Rva2VuOjI1OToyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJzYW5uaXVtYXN0ZXIifQ.FWstk7OFbSAA-tsX5kmkUYD474RMcqDtXFAOIhDczYw";
     // ═══════════════════ 以下不用改 ═══════════════════
 
     public static void main(String[] args) throws Exception {
