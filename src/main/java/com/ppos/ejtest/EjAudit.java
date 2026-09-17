@@ -99,6 +99,16 @@ public class EjAudit {
         return has(body, "^ *REPRINT *$");
     }
 
+    /**
+     * 辅助单判断只对「非标准票型」的块生效 —— 标准票（有 SALES INVOICE 等标题行）
+     * 即使正文里出现 AUX_TITLES 字样的商品名也不是辅助单。
+     * 2026-09-17 SANNIU 店踩过：商品名就叫 ADDITIONAL 的销售发票被误判成加菜单，
+     * 连带 SI 断号 6 / Z11 缺号 6 / Z12 毛额 3 天对不上。
+     */
+    private static boolean isIgnored(Block b) {
+        return isReprint(b.body()) || ("UNKNOWN".equals(b.type()) && isAux(b.body()));
+    }
+
     /** 一张小票。 */
     private record Block(int idx, String body, String type, int seq, String time, String businessDate) {
         boolean isSale() { return "SALES INVOICE".equals(type); }
@@ -137,7 +147,7 @@ public class EjAudit {
         List<Block> blocks = new ArrayList<>();
         for (Block b : parse(text)) {
             if (isReprint(b.body())) { nReprint++; continue; }
-            if (isAux(b.body())) { nAux++; continue; }
+            if ("UNKNOWN".equals(b.type()) && isAux(b.body())) { nAux++; continue; }
             blocks.add(b);
         }
         System.out.printf("忽略  重打 %d 张 / 后厨·点菜·BILLING 等辅助单据 %d 张（不参与校验）%n",

@@ -3,7 +3,7 @@
  * 用法: node js/audit-ej.mjs <txt路径>
  */
 import { readFileSync } from 'node:fs';
-import { isAux, isReprint, isIgnored } from './audit-ignore.mjs';
+import { isReprint, isIgnored } from './audit-ignore.mjs';
 
 const file = process.argv[2];
 if (!file) {
@@ -73,7 +73,7 @@ function businessDate(b) {
 
 // 重打单与后厨/BILLING 辅助单据不参与校验（口径见 audit-ignore.mjs）
 const nReprint = blocks.filter(isReprint).length;
-const nAux = blocks.filter(isAux).length;
+const nAux = blocks.filter((b) => !isReprint(b) && isIgnored(b)).length;
 const items = blocks
   .map((b, i) => ({ b, i }))
   .filter(({ b }) => !isIgnored(b))

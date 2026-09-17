@@ -26,7 +26,17 @@ const isAux = (b) =>
 
 const isReprint = (b) => /^ *REPRINT *$/m.test(b);
 
-/** 校验时是否忽略该票块。 */
-const isIgnored = (b) => isReprint(b) || isAux(b);
+/** 8 种标准交易票型（含其一即按标准票处理，不做辅助单判断）。 */
+const KNOWN_TYPE =
+  /^ *(CASH IN|SALES INVOICE|RETURN TRANSACTION|VOID TRANSACTION|PICK UP CASH|CASH OUT|X-READING|Z-READING REPORT) *$/m;
 
-export { isAux, isReprint, isIgnored };
+/**
+ * 校验时是否忽略该票块。
+ *
+ * 辅助单判断只对「非标准票型」的块生效 —— 2026-09-17 SANNIU 店踩过：
+ * 某商品的品名就叫 ADDITIONAL，整张销售发票被误判成加菜单剔出校验，
+ * 连带 SI 断号 6 / Z11 缺号 6 / Z12 毛额 3 天对不上。
+ */
+const isIgnored = (b) => isReprint(b) || (!KNOWN_TYPE.test(b) && isAux(b));
+
+export { isAux, isReprint, isIgnored, KNOWN_TYPE };
