@@ -19,7 +19,7 @@ public class Main {
 
     /** POS 设备 ID（sys_device.id）。填 null = 门店级聚合，查该门店所有设备。 */
     // default 151 测试门店
-//    private static final Long POS_ID = 1079635083984960L;
+    private static final Long POS_ID = 1079635083984960L;
 
             // wingmaster
 //    private static final Long POS_ID = 182L;
@@ -32,7 +32,14 @@ public class Main {
 
 
     // 125 skymart 零售店
-    private static final Long POS_ID = 225L;
+//    private static final Long POS_ID = 225L;
+
+        // mikhamaster  112
+//    private static final Long POS_ID = 194L;
+
+
+//    111	WANJIAXING
+//    private static final Long POS_ID =192L;
 
 
     /** 云端地址，不带结尾斜杠 */
@@ -44,12 +51,12 @@ public class Main {
      * <p><b>留空 = 走本地 fixture/ 目录，不连网。</b>
      */
     // 本地测试 151
-//    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA3NTI5MjAsImduIjowLCJpYXQiOjE3ODk1NDMzMjAsInNjb3BlIjoxNTEsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTUxIiwidGVuYW50X2lkIjoxNTEsInVzZXJJZCI6MTAwMDA3MywidXNlcl9pZCI6MTAwMDA3MywidXNlcl9rZXkiOiJfdG9rZW46MTAwMDA3MzoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJ0ZXN0bGVvMSJ9.TDb3sRNbS2V0ZFxaT08UE0FYjORyMlzJ6HFFO9c1GpE";
+    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA3NTI5MjAsImduIjowLCJpYXQiOjE3ODk1NDMzMjAsInNjb3BlIjoxNTEsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTUxIiwidGVuYW50X2lkIjoxNTEsInVzZXJJZCI6MTAwMDA3MywidXNlcl9pZCI6MTAwMDA3MywidXNlcl9rZXkiOiJfdG9rZW46MTAwMDA3MzoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJ0ZXN0bGVvMSJ9.TDb3sRNbS2V0ZFxaT08UE0FYjORyMlzJ6HFFO9c1GpE";
 
 
 
 
-    // sanniu test  115
+    // sanniu test  115  ⭕代表半勾
 //     private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4MzQ5NzUsImduIjowLCJpYXQiOjE3ODk2MjUzNzUsInNjb3BlIjoxMTUsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTE1IiwidGVuYW50X2lkIjoxMTUsInVzZXJJZCI6MjU5LCJ1c2VyX2lkIjoyNTksInVzZXJfa2V5IjoiX3Rva2VuOjI1OToyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJzYW5uaXVtYXN0ZXIifQ.-WgIbzbhPSlP7_j4rPzO4rySQYtB34PGrSOaXjnf9Mo";
 
     // wingmaster 107
@@ -60,7 +67,15 @@ public class Main {
 
 
     // 125 skymart 零售店
-        private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA5MjI5MzUsImduIjowLCJpYXQiOjE3ODk3MTMzMzUsInNjb3BlIjoxMjUsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTI1IiwidGVuYW50X2lkIjoxMjUsInVzZXJJZCI6Mjk2LCJ1c2VyX2lkIjoyOTYsInVzZXJfa2V5IjoiX3Rva2VuOjI5NjoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJza3ltYXJ0bWFzdGVyIn0.hYfhW0-LGIGlTgSCFMfYJCwEucrPX774ChzRNG69RcA";
+//        private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA5MjI5MzUsImduIjowLCJpYXQiOjE3ODk3MTMzMzUsInNjb3BlIjoxMjUsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTI1IiwidGVuYW50X2lkIjoxMjUsInVzZXJJZCI6Mjk2LCJ1c2VyX2lkIjoyOTYsInVzZXJfa2V5IjoiX3Rva2VuOjI5NjoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJza3ltYXJ0bWFzdGVyIn0.hYfhW0-LGIGlTgSCFMfYJCwEucrPX774ChzRNG69RcA";
+
+    // mikhamaster  112
+//    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA5MjQzNDksImduIjowLCJpYXQiOjE3ODk3MTQ3NDksInNjb3BlIjoxMTIsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTEyIiwidGVuYW50X2lkIjoxMTIsInVzZXJJZCI6MjQxLCJ1c2VyX2lkIjoyNDEsInVzZXJfa2V5IjoiX3Rva2VuOjI0MToyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJtaWtoYW1hc3RlciJ9.8tv9OB_wUkUgNBss3pPRSgE-X4xsP4-VnMWhahx2iyM";
+
+
+    //     111	WANJIAXING
+//        private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA5MjUzMTcsImduIjowLCJpYXQiOjE3ODk3MTU3MTcsInNjb3BlIjoxMTEsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTExIiwidGVuYW50X2lkIjoxMTEsInVzZXJJZCI6MjM5LCJ1c2VyX2lkIjoyMzksInVzZXJfa2V5IjoiX3Rva2VuOjIzOToyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJ3YW5qaWF4aW5nIn0.d995oZRigqj4rZUw31oN_MFhMYZFkx93ECORDV7PVeQ";
+
 
 
     // ═══════════════════ 以下不用改 ═══════════════════

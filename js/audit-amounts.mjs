@@ -72,8 +72,8 @@ function siOf(b, idx) {
 /** 票面实际印的支付方式标签。CREDIT CARD/DEBIT CARD 是完整标签(非 CREDIT/DEBIT)。 */
 const PAY_METHODS = [
   'CASH', 'GCASH', 'CREDIT CARD', 'DEBIT CARD', 'MAYA', 'PAYMAYA', 'QRPH',
-  'WECHAT', 'ALIPAY', 'STORED VALUE CARD', 'GIFT CHECK', 'POINTS',
-  'MEMBER BALANCE', 'FOODPANDA PAY', 'GRAB PAY',
+  'WECHAT', 'ALIPAY', 'STORED_VALUE_CARD', 'GIFT_CHECK', 'POINTS',
+  'MEMBER_BALANCE', 'FOODPANDA_PAY', 'GRAB_PAY',
 ];
 
 const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0, e: 0, c2: 0, c3: 0, w: 0 };

@@ -276,7 +276,9 @@ console.log(line);
       const beg = longOf2(x.body, 'Beg\. SI #:');
       const end = longOf2(x.body, 'End\. SI #:');
       if (beg === null || end === null) continue;
-      const ok = (beg >= zBeg && end <= zEndFinal) || (beg === zBeg - 1 && end === beg);
+      let ok = (beg >= zBeg && end <= zEndFinal) || (beg === zBeg - 1 && end === beg);
+      // X-READING 支持跨天班次(业务确认): X报表时间在另一天 = 跨天班次,放宽
+      if (!ok && x.time && sd !== x.time.slice(0, 10)) ok = true;
       if (!ok) {
         stats.xRange++;
         if (stats.xRange <= 5) push('xRange', `[X 号段] ${sd} X@${x.time}: SI ${beg}~${end} 越出 Z 号段 ${zBeg}~${zEndFinal}`);

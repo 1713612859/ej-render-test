@@ -76,8 +76,8 @@ public class EjAudit {
      *  旧标签前缀匹配后 CARD 挡住金额 → E 欠款/C 收付误报。 */
     private static final String[] PAY_METHODS = {
         "CASH", "GCASH", "CREDIT CARD", "DEBIT CARD", "MAYA", "PAYMAYA", "QRPH",
-        "WECHAT", "ALIPAY", "STORED VALUE CARD", "GIFT CHECK", "POINTS",
-        "MEMBER BALANCE", "FOODPANDA PAY", "GRAB PAY",
+        "WECHAT", "ALIPAY", "STORED_VALUE_CARD", "GIFT_CHECK", "POINTS",
+        "MEMBER_BALANCE", "FOODPANDA_PAY", "GRAB_PAY",
     };
 
     // ── 忽略口径（与 js/audit-ignore.mjs 同步）──
@@ -1353,6 +1353,11 @@ public class EjAudit {
                         // 换班时无新单，Beg/End 显示上期末号（zBeg-1 且 Beg==End）属正常
                         boolean ok = (beg >= zBeg && end <= zEndFinal)
                             || (beg == zBeg - 1 && end.equals(beg));
+                        // X-READING 支持跨天班次（业务确认 2026-09-18）：
+                        // X 窗口跨天时 SI 段可延伸到次日 Z 号段，不报
+                        if (!ok && x.time() != null && !en.getKey().equals(x.time().substring(0, 10))) {
+                            ok = true; // X 报表时间在另一天 = 跨天班次，放宽
+                        }
                         if (!ok) {
                             xRangeBad++;
                             problems.add(String.format("[X 号段] %s X@%s: SI %d~%d 越出 Z 号段 %d~%d",
