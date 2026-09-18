@@ -69,11 +69,19 @@ function siOf(b, idx) {
   return m ? m[1].replace(/^0+/, '') || '0' : `块#${idx}`;
 }
 
-/** 票面实际印的支付方式标签。CREDIT CARD/DEBIT CARD 是完整标签(非 CREDIT/DEBIT)。 */
+/**
+ * 票面实际印的支付方式标签（全量 EJ 实测：空格/下划线两种写法并存，都要收）：
+ * CREDIT CARD ×10 + CREDIT_CARD ×6、DEBIT CARD ×3 + DEBIT_CARD ×2、
+ * MEMBER BALANCE ×26 + MEMBER_BALANCE ×16、STORED_VALUE_CARD ×2、
+ * FOODPANDA_PAY ×10、GRAB_PAY ×6。
+ */
 const PAY_METHODS = [
-  'CASH', 'GCASH', 'CREDIT CARD', 'DEBIT CARD', 'MAYA', 'PAYMAYA', 'QRPH',
-  'WECHAT', 'ALIPAY', 'STORED_VALUE_CARD', 'GIFT_CHECK', 'POINTS',
-  'MEMBER_BALANCE', 'FOODPANDA_PAY', 'GRAB_PAY',
+  'CASH', 'GCASH',
+  'CREDIT CARD', 'CREDIT_CARD', 'DEBIT CARD', 'DEBIT_CARD',
+  'MAYA', 'PAYMAYA', 'QRPH', 'WECHAT', 'ALIPAY',
+  'STORED VALUE CARD', 'STORED_VALUE_CARD', 'GIFT CHECK', 'GIFT_CHECK',
+  'POINTS', 'MEMBER BALANCE', 'MEMBER_BALANCE',
+  'FOODPANDA_PAY', 'GRAB_PAY',
 ];
 
 const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0, e: 0, c2: 0, c3: 0, w: 0 };

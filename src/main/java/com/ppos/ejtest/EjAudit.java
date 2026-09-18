@@ -71,13 +71,19 @@ public class EjAudit {
     private static final Pattern PLACEHOLDER =
         Pattern.compile("^(null|undefined|NaN|-|--|TBD|N/A)$", Pattern.CASE_INSENSITIVE);
 
-    /** 票面实际印的支付方式标签。注意是 MAYA 不是 PAYMAYA，漏了会误判分账支付不平。
-     *  2026-09-18 SKY-MART 实测:票面印 "CREDIT CARD"/"DEBIT CARD"(非 CREDIT/DEBIT),
-     *  旧标签前缀匹配后 CARD 挡住金额 → E 欠款/C 收付误报。 */
+    /**
+     * 票面实际印的支付方式标签。全量 EJ 实测：空格/下划线两种写法并存，都要收——
+     * CREDIT CARD ×10 + CREDIT_CARD ×6、DEBIT CARD ×3 + DEBIT_CARD ×2、
+     * MEMBER BALANCE ×26 + MEMBER_BALANCE ×16、STORED_VALUE_CARD ×2、
+     * FOODPANDA_PAY ×10、GRAB_PAY ×6（2026-09-18 LUOJIA E 欠款误报由此补全）。
+     */
     private static final String[] PAY_METHODS = {
-        "CASH", "GCASH", "CREDIT CARD", "DEBIT CARD", "MAYA", "PAYMAYA", "QRPH",
-        "WECHAT", "ALIPAY", "STORED_VALUE_CARD", "GIFT_CHECK", "POINTS",
-        "MEMBER_BALANCE", "FOODPANDA_PAY", "GRAB_PAY",
+        "CASH", "GCASH",
+        "CREDIT CARD", "CREDIT_CARD", "DEBIT CARD", "DEBIT_CARD",
+        "MAYA", "PAYMAYA", "QRPH", "WECHAT", "ALIPAY",
+        "STORED VALUE CARD", "STORED_VALUE_CARD", "GIFT CHECK", "GIFT_CHECK",
+        "POINTS", "MEMBER BALANCE", "MEMBER_BALANCE",
+        "FOODPANDA_PAY", "GRAB_PAY",
     };
 
     // ── 忽略口径（与 js/audit-ignore.mjs 同步）──
