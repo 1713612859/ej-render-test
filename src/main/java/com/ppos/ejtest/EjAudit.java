@@ -71,11 +71,13 @@ public class EjAudit {
     private static final Pattern PLACEHOLDER =
         Pattern.compile("^(null|undefined|NaN|-|--|TBD|N/A)$", Pattern.CASE_INSENSITIVE);
 
-    /** 票面实际印的支付方式标签。注意是 MAYA 不是 PAYMAYA，漏了会误判分账支付不平。 */
+    /** 票面实际印的支付方式标签。注意是 MAYA 不是 PAYMAYA，漏了会误判分账支付不平。
+     *  2026-09-18 SKY-MART 实测:票面印 "CREDIT CARD"/"DEBIT CARD"(非 CREDIT/DEBIT),
+     *  旧标签前缀匹配后 CARD 挡住金额 → E 欠款/C 收付误报。 */
     private static final String[] PAY_METHODS = {
-        "CASH", "GCASH", "CREDIT", "DEBIT", "MAYA", "PAYMAYA", "QRPH",
+        "CASH", "GCASH", "CREDIT CARD", "DEBIT CARD", "MAYA", "PAYMAYA", "QRPH",
         "WECHAT", "ALIPAY", "STORED VALUE CARD", "GIFT CHECK", "POINTS",
-        "MEMBER BALANCE",
+        "MEMBER BALANCE", "FOODPANDA PAY", "GRAB PAY",
     };
 
     // ── 忽略口径（与 js/audit-ignore.mjs 同步）──

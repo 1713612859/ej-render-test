@@ -69,11 +69,11 @@ function siOf(b, idx) {
   return m ? m[1].replace(/^0+/, '') || '0' : `块#${idx}`;
 }
 
-/** 票面实际印的支付方式标签。注意是 MAYA 不是 PAYMAYA —— 漏了会误判分账支付不平。 */
+/** 票面实际印的支付方式标签。CREDIT CARD/DEBIT CARD 是完整标签(非 CREDIT/DEBIT)。 */
 const PAY_METHODS = [
-  'CASH', 'GCASH', 'CREDIT', 'DEBIT', 'MAYA', 'PAYMAYA', 'QRPH',
+  'CASH', 'GCASH', 'CREDIT CARD', 'DEBIT CARD', 'MAYA', 'PAYMAYA', 'QRPH',
   'WECHAT', 'ALIPAY', 'STORED VALUE CARD', 'GIFT CHECK', 'POINTS',
-  'MEMBER BALANCE',
+  'MEMBER BALANCE', 'FOODPANDA PAY', 'GRAB PAY',
 ];
 
 const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0, e: 0, c2: 0, c3: 0, w: 0 };

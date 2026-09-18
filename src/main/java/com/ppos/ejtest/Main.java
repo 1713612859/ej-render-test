@@ -24,11 +24,16 @@ public class Main {
             // wingmaster
 //    private static final Long POS_ID = 182L;
 
-            // kyo master
-    private static final Long POS_ID = 275L;
+            // 132 kyo master
+//    private static final Long POS_ID = 275L;
 
-    //  sanniu 火锅
+    // 115 sanniu 火锅
 //    private static final Long POS_ID = 205L;
+
+
+    // 125 skymart 零售店
+    private static final Long POS_ID = 225L;
+
 
     /** 云端地址，不带结尾斜杠 */
     private static final String BASE_URL = "https://devppos.luojia58.cn";
@@ -50,8 +55,12 @@ public class Main {
     // wingmaster 107
 //    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4NTc1NjMsImduIjowLCJpYXQiOjE3ODk2NDc5NjMsInNjb3BlIjoxMDcsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTA3IiwidGVuYW50X2lkIjoxMDcsInVzZXJJZCI6MjI3LCJ1c2VyX2lkIjoyMjcsInVzZXJfa2V5IjoiX3Rva2VuOjIyNzoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJ3aW5nbWFzdGVyIn0.al4D-sJCIjm_24nWIu4FDJkNHdK39locIeY_Lawiee8";
 
-    // kyo master 132
-    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4NTc5OTgsImduIjowLCJpYXQiOjE3ODk2NDgzOTgsInNjb3BlIjoxMzIsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTMyIiwidGVuYW50X2lkIjoxMzIsInVzZXJJZCI6MzM2LCJ1c2VyX2lkIjozMzYsInVzZXJfa2V5IjoiX3Rva2VuOjMzNjoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJreW9tYXN0ZXIifQ.5QZc_IOIxrk4c-MqOUH2PZVaFHFABVCQmgAk53wd6PU";
+    // kyo master 132 ✅
+//    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4NTc5OTgsImduIjowLCJpYXQiOjE3ODk2NDgzOTgsInNjb3BlIjoxMzIsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTMyIiwidGVuYW50X2lkIjoxMzIsInVzZXJJZCI6MzM2LCJ1c2VyX2lkIjozMzYsInVzZXJfa2V5IjoiX3Rva2VuOjMzNjoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJreW9tYXN0ZXIifQ.5QZc_IOIxrk4c-MqOUH2PZVaFHFABVCQmgAk53wd6PU";
+
+
+    // 125 skymart 零售店
+        private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA5MjI5MzUsImduIjowLCJpYXQiOjE3ODk3MTMzMzUsInNjb3BlIjoxMjUsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTI1IiwidGVuYW50X2lkIjoxMjUsInVzZXJJZCI6Mjk2LCJ1c2VyX2lkIjoyOTYsInVzZXJfa2V5IjoiX3Rva2VuOjI5NjoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJza3ltYXJ0bWFzdGVyIn0.hYfhW0-LGIGlTgSCFMfYJCwEucrPX774ChzRNG69RcA";
 
 
     // ═══════════════════ 以下不用改 ═══════════════════
