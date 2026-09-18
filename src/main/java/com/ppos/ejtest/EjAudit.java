@@ -329,13 +329,25 @@ public class EjAudit {
             for (Block b : timed) byDay.merge(b.time().substring(0, 10), 1, Integer::sum);
             System.out.printf(" 按日分布  覆盖 %d 天，日均 %.1f 张%n",
                 byDay.size(), (double) timed.size() / byDay.size());
+            // 固定宽度表格：每行 4 组「日期|张数」，日期 5 列、张数右对齐 5 列，
+            // 行宽 3+4×12=51（含表格线），数字多少都不跑版。
+            System.out.println("   +------+-----+------+-----+------+-----+------+-----+");
+            System.out.println("   | 日期 | 张数 | 日期 | 张数 | 日期 | 张数 | 日期 | 张数 |");
+            System.out.println("   +------+-----+------+-----+------+-----+------+-----+");
             int col = 0;
-            StringBuilder sb = new StringBuilder("   ");
+            StringBuilder row = new StringBuilder("   ");
             for (Map.Entry<String, Integer> e : byDay.entrySet()) {
-                sb.append(String.format("%s ×%-3d ", e.getKey().substring(5), e.getValue()));
-                if (++col % 6 == 0) { System.out.println(sb); sb = new StringBuilder("   "); }
+                row.append(String.format("|%5s |%4d ", e.getKey().substring(5), e.getValue()));
+                if (++col % 4 == 0) {
+                    System.out.println(row.append("|"));
+                    row = new StringBuilder("   ");
+                }
             }
-            if (col % 6 != 0) System.out.println(sb);
+            if (col % 4 != 0) {
+                for (int k = col % 4; k < 4; k++) row.append("|      |     ");
+                System.out.println(row.append("|"));
+            }
+            System.out.println("   +------+-----+------+-----+------+-----+------+-----+");
         }
         int orderErr = 0;
         for (int i = 1; i < timed.size(); i++) {
