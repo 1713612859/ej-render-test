@@ -158,6 +158,39 @@ for (const t of ['RETURN TRANSACTION', 'VOID TRANSACTION']) {
 }
 const sales = items.filter((i) => i.type === 'SALES INVOICE');
 const govSales = sales.filter((i) => /Cashier Copy|Customer Copy/.test(i.body));
+
+// ── 4.5 双联内容一致：Cashier/Customer 副本除标记行外应逐行一致 ──
+let pairDiff = 0;
+const normCopyLines = (body) =>
+  body
+    .split('\n')
+    .map((l) => l.replace(/\s+$/, ''))
+    .filter((l) => l.trim() !== 'Cashier Copy' && l.trim() !== 'Customer Copy');
+for (let i = 0; i < items.length; i++) {
+  const a = items[i];
+  if (!/Cashier Copy/.test(a.body || '')) continue;
+  for (let j = i + 1; j < items.length; j++) {
+    const c = items[j];
+    if (c.type !== a.type) continue;
+    if (!/Customer Copy/.test(c.body || '')) break;
+    const la = normCopyLines(a.body);
+    const lc = normCopyLines(c.body);
+    const n = Math.max(la.length, lc.length);
+    for (let k = 0; k < n; k++) {
+      const x = k < la.length ? la[k] : '(缺行)';
+      const y = k < lc.length ? lc[k] : '(缺行)';
+      if (x !== y) {
+        pairDiff++;
+        if (pairDiff <= 5) {
+          console.log(`   [双联不一致] 块#${a.idx} vs #${c.idx} 第${k + 1}行: "${x}" / "${y}"`);
+        }
+        break;
+      }
+    }
+    break;
+  }
+}
+console.log(`   双联内容一致: ${pairDiff === 0 ? '✅' : '❌'} ${pairDiff} 对不一致`);
 console.log(
   `   SALES INVOICE        ${sales.length} 张，其中双联 ${govSales.length} 张` +
     `（政府折扣单）${govSales.length % 2 === 0 ? '✅' : '❌ 奇数，存在落单'}`,

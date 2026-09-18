@@ -76,7 +76,7 @@ const PAY_METHODS = [
   'MEMBER BALANCE',
 ];
 
-const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0, e: 0, w: 0 };
+const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0, e: 0, c2: 0, w: 0 };
 const problems = [];
 const warns = [];
 
@@ -193,6 +193,26 @@ for (const [idx, b] of blocks.entries()) {
     }
   }
 
+  // ── C2：退货/作废票支付冲销——有支付行时合计应等于 Amount（负向，无找零行）──
+  // 此前退废票的支付行完全无校验（132 RETURN 399 事故的票面路径）。
+  if (!isSale && due !== null) {
+    let paid2 = 0;
+    let hasPay2 = false;
+    for (const m of PAY_METHODS) {
+      const v = amountOf(b, m);
+      if (v !== null) {
+        paid2 += v;
+        hasPay2 = true;
+      }
+    }
+    if (hasPay2 && Math.abs(paid2 - due) > EPS) {
+      stats.c2++;
+      if (stats.c2 <= 10) {
+        problems.push(`[C2 冲销] ${tag}: 支付行合计 ${paid2.toFixed(2)}，票面 Amount ${due}`);
+      }
+    }
+  }
+
   // ── D ──
   // 数量允许小数（称重/半份商品印 0.5、0.38），与 audit-content.mjs 的 ITEM_ROW 同口径。
   // 销售票行价 = 原价，对比 Gross；退货/作废票行价 = 实退净额（折扣与 VAT 调整
@@ -228,6 +248,7 @@ const rowsOut = [
   ['B 税分解合计 = 毛额 ∓ LessVAT ± AddVAT ∓ 普通折扣', stats.b],
   ['C 支付 - 找零 = 应付（仅销售票）', stats.c],
   ['E 应付>0 必有支付行（欠款探针）', stats.e],
+  ['C2 退废票支付冲销 = Amount（有支付行时）', stats.c2],
   ['D 行合计 = Gross(销售) / 实退−SC(退货·作废)', stats.d],
 ];
 for (const [label, n] of rowsOut) {

@@ -399,6 +399,32 @@ public class EjAudit {
         System.out.printf(" 副本配对  %-20s %d 张，其中双联 %d 张（政府折扣单）%s%n",
             "SALES INVOICE", sales.size(), govSales, govSales % 2 == 0 ? "✅" : "❌ 奇数，存在落单");
 
+        // 双联内容一致：Cashier/Customer 副本除标记行外应逐行一致。
+        // 只配对不比内容的话，渲染层改错一联（金额/单号/明细）会静默漏过。
+        int pairDiff = 0;
+        List<String> pairDetails = new ArrayList<>();
+        for (int i = 0; i < blocks.size(); i++) {
+            Block a = blocks.get(i);
+            if (!a.body().contains("Cashier Copy")) continue;
+            for (int j = i + 1; j < blocks.size(); j++) {
+                Block c = blocks.get(j);
+                if (!c.type().equals(a.type())) continue;
+                if (!c.body().contains("Customer Copy")) break;
+                String diff = copyBodyDiff(a.body(), c.body());
+                if (diff != null) {
+                    pairDiff++;
+                    if (pairDetails.size() < 10) {
+                        pairDetails.add("[双联不一致] 块#" + a.idx() + " vs #" + c.idx() + ": " + diff);
+                    }
+                }
+                break;
+            }
+        }
+        if (!pairDetails.isEmpty()) {
+            System.out.println(" 双联内容  " + pairDiff + " 对不一致 ⚠");
+            pairDetails.forEach(d -> System.out.println("   " + d));
+        }
+
         // 脏值
         int dirty = 0;
         StringBuilder dirtyLine = new StringBuilder();
@@ -466,6 +492,7 @@ public class EjAudit {
             new Check("[结构] 时间升序无逆序", orderErr),
             new Check("[结构] 日期归属无越界", oob),
             new Check("[结构] 双联配对", pairErr),
+            new Check("[结构] 双联内容一致（Cashier=Customer）", pairDiff),
             new Check("[结构] 无脏值", dirty),
             new Check("[结构] 行宽 ≤ " + LINE_WIDTH + "（商品名/备注等客户数据除外）", over.size()),
             new Check("[结构] 头部/尾部/金额行完整", noHeader + noFooter + emptyAmount)
@@ -720,7 +747,7 @@ public class EjAudit {
         System.out.printf(" 【三】金额勾稽（容差 %.2f）%n", EPS);
         System.out.println(SEP_LINE);
 
-        int a = 0, bCnt = 0, c = 0, d = 0, e = 0;
+        int a = 0, bCnt = 0, c = 0, d = 0, e = 0, c2 = 0;
         int w = 0;
         List<String> problems = new ArrayList<>();
         List<String> warns = new ArrayList<>();
@@ -838,6 +865,21 @@ public class EjAudit {
                     }
                 }
             }
+            // C2 退货/作废票支付冲销：有支付行时合计应等于 Amount（负向冲销，无找零行）。
+            // 此前退废票的支付行完全无校验——132 RETURN 399 事故的票面路径。
+            else if (blk.isTxn() && due != null) {
+                double paid2 = 0;
+                boolean hasPay2 = false;
+                for (String pm : PAY_METHODS) {
+                    Double v = amountOf(b, pm);
+                    if (v != null) { paid2 += v; hasPay2 = true; }
+                }
+                if (hasPay2 && Math.abs(paid2 - due) > EPS) {
+                    c2++;
+                    problems.add(String.format("[C2 冲销] %s: 支付行合计 %.2f，票面 Amount %.2f",
+                        tag, paid2, due));
+                }
+            }
 
             // D 行合计。销售票行价 = 原价，对比 Gross；退货/作废票行价 = 实退净额
             // （折扣与 VAT 调整已摊进行价），故 行合计 + SC = Amount。
@@ -862,6 +904,7 @@ public class EjAudit {
             new Check("[金额] B 税分解合计 = 毛额∓LessVAT±AddVAT∓普通折扣", bCnt),
             new Check("[金额] C 支付-找零 = 应付（仅销售票）", c),
             new Check("[金额] E 应付>0 必有支付行（欠款探针）", e),
+            new Check("[金额] C2 退废票支付冲销 = Amount（有支付行时）", c2),
             new Check("[金额] D 行合计 = Gross(销售) / 实退-SC(退货·作废)", d)
         );
         printChecks(checks, problems);
@@ -971,6 +1014,38 @@ public class EjAudit {
         int counterErr = 0, accErr = 0, siErr = 0, dateErr = 0, gapErr = 0;
         int xGross = 0, xVoid = 0, xRet = 0;
         List<String> problems = new ArrayList<>();
+
+        // Z15 文件级覆盖：每张交易票（去重后）的票面时间都应落在某个 Z 窗口内
+        // [Start, End]。中段漏 Z / 漏导票会在此暴露；末张 Z 之后的票属未结账期，不计。
+        // 累计链的文件级伸缩与 Z3 逐对校验等价，不重复做。
+        int uncovered = 0;
+        {
+            record Win(String start, String end) {}
+            List<Win> wins = new ArrayList<>();
+            for (Block z : zs) {
+                String st = find(z.body(), "Start Date ?& ?Time:?[ \\t]*(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})");
+                String en = find(z.body(), "End Date ?& ?Time:?[ \\t]*(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})");
+                if (st != null && en != null) wins.add(new Win(st, en));
+            }
+            String lastEnd = wins.isEmpty() ? null : wins.get(wins.size() - 1).end();
+            java.util.Set<String> covSeen = new java.util.HashSet<>();
+            for (Block b : blocks) {
+                if (!b.isTxn() || b.time() == null) continue;
+                Long n = numOf(b);
+                if (!covSeen.add("T" + (n != null ? n : b.idx()))) continue;
+                boolean covered = false;
+                for (Win w : wins) {
+                    if (b.time().compareTo(w.start()) >= 0 && b.time().compareTo(w.end()) <= 0) {
+                        covered = true;
+                        break;
+                    }
+                }
+                if (!covered && lastEnd != null && b.time().compareTo(lastEnd) <= 0) {
+                    uncovered++;
+                    problems.add("[Z 覆盖] " + tagOf(b) + " " + b.time() + " 不在任何 Z 窗口内");
+                }
+            }
+        }
 
         for (int i = 0; i < zs.size(); i++) {
             Block z = zs.get(i);
@@ -1126,7 +1201,8 @@ public class EjAudit {
             new Check("[Z] 号段内无缺号（SI/VOID/RETURN）", gapErr),
             new Check("[Z] 毛额 = 当日销售票合计", xGross),
             new Check("[Z] 作废额 = 当日作废票合计（含税）", xVoid),
-            new Check("[Z] 退货额 = 当日退货票合计（含税）", xRet)
+            new Check("[Z] 退货额 = 当日退货票合计（含税）", xRet),
+            new Check("[Z] 交易票均在 Z 窗口内（末日之前）", uncovered)
         );
         printChecks(checks, problems);
         System.out.printf("   ℹ 覆盖营业日 %d 天，Z Counter %s → %s%n",
@@ -1213,4 +1289,27 @@ public class EjAudit {
     }
 
     private EjAudit() {}
+
+    /** 去掉 Cashier/Customer 标记行、去行尾空白后的票身行。 */
+    private static List<String> copyBodyLines(String body) {
+        List<String> out = new ArrayList<>();
+        for (String l : body.split("\n", -1)) {
+            String t = l.trim();
+            if (t.equals("Cashier Copy") || t.equals("Customer Copy")) continue;
+            out.add(l.stripTrailing());
+        }
+        return out;
+    }
+
+    /** 两副本不一致时返回第一处差异描述，一致返回 null。 */
+    private static String copyBodyDiff(String a, String c) {
+        List<String> la = copyBodyLines(a), lc = copyBodyLines(c);
+        int n = Math.max(la.size(), lc.size());
+        for (int i = 0; i < n; i++) {
+            String x = i < la.size() ? la.get(i) : "(缺行)";
+            String y = i < lc.size() ? lc.get(i) : "(缺行)";
+            if (!x.equals(y)) return "第" + (i + 1) + "行 Cashier\"" + x + "\" / Customer\"" + y + "\"";
+        }
+        return null;
+    }
 }

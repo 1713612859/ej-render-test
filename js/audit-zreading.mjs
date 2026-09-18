@@ -90,9 +90,42 @@ for (const b of blocks) {
 }
 
 // ── 逐张校验 ──
-const stats = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0, z6: 0, z7: 0, z8: 0, z9: 0, z10: 0, z11: 0, z12: 0, z13: 0, z14: 0 };
+const stats = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0, z6: 0, z7: 0, z8: 0, z9: 0, z10: 0, z11: 0, z12: 0, z13: 0, z14: 0, z15: 0 };
 const problems = [];
 const push = (k, msg) => { stats[k]++; if (stats[k] <= 5) problems.push(msg); };
+
+// ── Z15 文件级覆盖：每张交易票（去重）的票面时间应落在某 Z 窗口 [Start, End] 内 ──
+// 中段漏 Z / 漏导票在此暴露；末张 Z 之后的票属未结账期，不计。
+{
+  const wins = zs.map((z) => ({
+    start: (z.body.match(/Start Date ?& ?Time:\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/) || [])[1],
+    end: (z.body.match(/End Date ?& ?Time:\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/) || [])[1],
+  })).filter((w) => w.start && w.end);
+  const lastEnd = wins.length ? wins[wins.length - 1].end : null;
+  const covSeen = new Set();
+  for (const [idx, body] of blocks.entries()) {
+    const isSale = /^ *SALES INVOICE *$/m.test(body);
+    const isRet = /^ *RETURN TRANSACTION *$/m.test(body);
+    const isVoid = /^ *VOID TRANSACTION *$/m.test(body);
+    if ((!isSale && !isRet && !isVoid) || isIgnored(body)) continue;
+    const time = (body.match(/Exact Date:?\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/) || [])[1]
+      || (body.match(/Date ?& ?Time:?\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/) || [])[1];
+    if (!time) continue;
+    const no = isSale
+      ? (body.match(/^\s*SI\s+(\d{10,})\s*$/m) || [])[1]
+      : isRet
+        ? (body.match(/^RETURN#\s+(\d{10,})\s*$/m) || [])[1]
+        : (body.match(/^VOID#\s+(\d{10,})\s*$/m) || [])[1];
+    const key = 'T' + (no || idx);
+    if (covSeen.has(key)) continue;
+    covSeen.add(key);
+    const covered = wins.some((w) => time >= w.start && time <= w.end);
+    if (!covered && lastEnd && time <= lastEnd) {
+      stats.z15++;
+      if (stats.z15 <= 5) push('z15', `[Z 覆盖] ${time} 不在任何 Z 窗口内（块#${idx}）`);
+    }
+  }
+}
 
 const longOf = (b, label) => {
   const m = b.match(new RegExp(`^${label}\\s+(\\d+)\\s*$`, 'm'));
@@ -199,6 +232,7 @@ const rows = [
   ['Z12 毛额 = 当日销售票合计', stats.z12],
   ['Z13 作废额 = 当日作废票合计（含税）', stats.z13],
   ['Z14 退货额 = 当日退货票合计（含税）', stats.z14],
+  ['Z15 交易票均在 Z 窗口内（末日之前）', stats.z15],
 ];
 for (const [label, n] of rows) {
   console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(44)} 异常 ${n}`);
