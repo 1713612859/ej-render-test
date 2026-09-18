@@ -1089,8 +1089,15 @@ public class EjAudit {
             double lessVat = sumAll(b.body(), "^LESS 12% VAT[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
             DayTotal dt = day.computeIfAbsent(d, k -> new DayTotal());
             if (b.isSale()) dt.sale += g;
-            else if (b.isReturn()) dt.ret += g + lessVat;
-            else dt.voided += g + lessVat;
+            else {
+                // 含税口径(修正 2026-09-18):退/废票的 Z 桶合计是「实退净额 + 冲回VAT」。
+                // 票面 Gross 是折前(原小计),带整单折扣的单必须再扣票面 Discount 行,
+                // 否则每张折扣退废单都差一个折扣额(void#19: 4312-12=4300 ✓、void#27: 5032-32=5000 ✓)。
+                double lineDisc = sumAll(b.body(),
+                    "^(?:Regular Discount|Discount(?: 20%)?|LESS DISCOUNT)[ \\t]+([\\d,]+\\.\\d{2})[ \\t]*$");
+                if (b.isReturn()) dt.ret += g + lessVat + lineDisc;
+                else dt.voided += g + lessVat + lineDisc;
+            }
         }
 
         int selfConsist = 0, netErr = 0, dayErr = 0, discErr = 0, adjErr = 0, vatAdjErr = 0;
