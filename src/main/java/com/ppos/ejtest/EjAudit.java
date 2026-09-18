@@ -1090,13 +1090,12 @@ public class EjAudit {
             DayTotal dt = day.computeIfAbsent(d, k -> new DayTotal());
             if (b.isSale()) dt.sale += g;
             else {
-                // 含税口径(修正 2026-09-18):退/废票的 Z 桶合计是「实退净额 + 冲回VAT」。
-                // 票面 Gross 是折前(原小计),带整单折扣的单必须再扣票面 Discount 行,
-                // 否则每张折扣退废单都差一个折扣额(void#19: 4312-12=4300 ✓、void#27: 5032-32=5000 ✓)。
-                double lineDisc = sumAll(b.body(),
-                    "^(?:Regular Discount|Discount(?: 20%)?|LESS DISCOUNT)[ \\t]+([\\d,]+\\.\\d{2})[ \\t]*$");
-                if (b.isReturn()) dt.ret += g + lessVat + lineDisc;
-                else dt.voided += g + lessVat + lineDisc;
+                // 含税口径(终版 2026-09-18,设备快照裁定):退/废票合计用「Gross + LessVAT」,
+                // 不扣票面 Discount 行 —— Z 桶(设备/POS → A 日结 → B 逐层传递)按折前含税统计:
+                // Z-2026-07-06 设备原文 4421.43+530.57 与 A 日结一致;06-21 桶 650=折前(330+320)。
+                // 票面退货/作废单的 VATable/Amount 印折后属另一口径,校验器以设备口径为准。
+                if (b.isReturn()) dt.ret += g + lessVat;
+                else dt.voided += g + lessVat;
             }
         }
 

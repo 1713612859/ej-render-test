@@ -85,11 +85,9 @@ for (const b of blocks) {
   const d = days.get(date) || { sale: 0, ret: 0, void: 0 };
   if (isSale) d.sale += gross;
   else {
-    // 修正 2026-09-18: 票面 Gross 是折前,退废单带折扣须扣 Discount 行(void#19: 4312-12=4300)
-    const disc = (b.match(/^(?:Regular Discount|Discount(?: 20%)?|LESS DISCOUNT)\s+([\d,]+\.\d{2})\s*$/m) || [])[1];
-    const lineDisc = disc ? num(disc) : 0;
-    if (isRet) d.ret += gross + lessVat + lineDisc;
-    else d.void += gross + lessVat + lineDisc;
+    // 终版(设备快照裁定 2026-09-18): Z 桶按折前含税统计,票面合计用 Gross+LessVAT,不扣 Discount
+    if (isRet) d.ret += gross + lessVat;
+    else d.void += gross + lessVat;
   }
   days.set(date, d);
 }
