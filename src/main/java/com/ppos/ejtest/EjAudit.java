@@ -1089,13 +1089,17 @@ public class EjAudit {
             double lessVat = sumAll(b.body(), "^LESS 12% VAT[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
             DayTotal dt = day.computeIfAbsent(d, k -> new DayTotal());
             if (b.isSale()) dt.sale += g;
-            else {
-                // 含税口径(终版 2026-09-18,设备快照裁定):退/废票合计用「Gross + LessVAT」,
-                // 不扣票面 Discount 行 —— Z 桶(设备/POS → A 日结 → B 逐层传递)按折前含税统计:
-                // Z-2026-07-06 设备原文 4421.43+530.57 与 A 日结一致;06-21 桶 650=折前(330+320)。
-                // 票面退货/作废单的 VATable/Amount 印折后属另一口径,校验器以设备口径为准。
-                if (b.isReturn()) dt.ret += g + lessVat;
-                else dt.voided += g + lessVat;
+            else if (b.isReturn()) {
+                // Z14 退货(设备口径,2026-09-18 终审):Z 桶按折前含税统计
+                // (06-21 桶 580.39+69.61=650 与 A 日结/设备一致),票面合计不扣 Discount。
+                dt.ret += g + lessVat;
+            } else {
+                // Z13 作废(实退口径,2026-09-18 生成器已改):Z 桶按实退净额含税统计
+                // (08-07 桶 7294=4300+2994),票面合计须扣 Discount 行
+                // (void#19: -4312+12=-4300 ✓、void#27: -5032+32=-5000 ✓)。
+                double lineDisc = sumAll(b.body(),
+                    "^(?:Regular Discount|Discount(?: 20%)?|LESS DISCOUNT)[ \\t]+([\\d,]+\\.\\d{2})[ \\t]*$");
+                dt.voided += g + lessVat + lineDisc;
             }
         }
 

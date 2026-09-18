@@ -84,10 +84,13 @@ for (const b of blocks) {
   const lessVat = amt(b, 'LESS 12% VAT') || 0;
   const d = days.get(date) || { sale: 0, ret: 0, void: 0 };
   if (isSale) d.sale += gross;
-  else {
-    // 终版(设备快照裁定 2026-09-18): Z 桶按折前含税统计,票面合计用 Gross+LessVAT,不扣 Discount
-    if (isRet) d.ret += gross + lessVat;
-    else d.void += gross + lessVat;
+  else if (isRet) {
+    // Z14 退货(设备口径): Z 桶按折前含税统计,票面合计不扣 Discount
+    d.ret += gross + lessVat;
+  } else {
+    // Z13 作废(实退口径,生成器已改): 票面合计须扣 Discount 行(void#19: -4312+12=-4300)
+    const disc = (b.match(/^(?:Regular Discount|Discount(?: 20%)?|LESS DISCOUNT)\s+([\d,]+\.\d{2})\s*$/m) || [])[1];
+    d.void += gross + lessVat + (disc ? num(disc) : 0);
   }
   days.set(date, d);
 }
