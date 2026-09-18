@@ -82,12 +82,19 @@ for (const b of blocks) {
   if (!date || !no || seen.has((isSale ? 'S' : isRet ? 'R' : 'V') + no) || gross === null) continue;
   seen.add((isSale ? 'S' : isRet ? 'R' : 'V') + no);
   const lessVat = amt(b, 'LESS 12% VAT') || 0;
-  const d = days.get(date) || { sale: 0, ret: 0, void: 0 };
+  const d = days.get(date) || { sale: 0, ret: 0, void: 0, voidSc: 0 };
   if (isSale) d.sale += gross;
-  else {
-    // Z13/Z14 统一折前口径(与A账一致): Gross+LessVAT,不扣 Discount
-    if (isRet) d.ret += gross + lessVat;
-    else d.void += gross + lessVat;
+  else if (isRet) {
+    // Z14 退货含税(与A账一致,折前不含SC): Gross + LessVAT
+    d.ret += gross + lessVat;
+  } else {
+    // Z13 作废含税 = 票面 Amount:含 SC、按折扣冲回后的实冲净额
+    // (2026-09-18 LUOJIA 实测:Z@09-15 = ΣAmount 9177.20,Σ(gross+lessVat) 8452.00
+    //  差 725.20 恰为作废票 SC 合计;VOID6 gross -16592 折扣 15000,Z 按 -1592 计)
+    const amount = amt(b, 'Amount');
+    const sc = (b.match(/^Service Charge(?:\([^)]*\))? *(-?[\d,]+\.\d{2}) *$/m) || [])[1];
+    d.void += amount !== null ? amount : gross + lessVat + (sc ? num(sc) : 0);
+    if (sc) d.voidSc += Math.abs(num(sc)); // 作废票 SC 印负值,加回 Z1 基数取绝对值
   }
   days.set(date, d);
 }
@@ -154,9 +161,12 @@ for (let i = 0; i < zs.length; i++) {
   const tag = `Z@${z.bd || '?'}`;
   const b = z.body;
 
-  // Z1 税分解
+  // Z1 税分解。LESS VOID 含作废单的 SC(见 Z13 口径注释),而税分解四项不随之扣减,
+  // 所以基数要加回当日作废票的 SC —— 2026-09-18 LUOJIA 实测:Z@09-15 差 725.20、
+  // Z@09-16 差 53.00,均恰为当日作废票 SC 合计,加回后逐分吻合。
   const bk = z.vatable + z.vat + z.exempt + z.zero;
-  const bkExpect = z.gross - z.lessRet - z.lessVoid - z.vatAdj - z.otherDisc;
+  const day1 = days.get(z.bd) || { sale: 0, ret: 0, void: 0, voidSc: 0 };
+  const bkExpect = z.gross - z.lessRet - z.lessVoid - z.vatAdj - z.otherDisc + day1.voidSc;
   if (Math.abs(bk - bkExpect) > EPS) push('z1', `[Z1 税分解] ${tag}: 四项合计 ${bk.toFixed(2)}，基数 ${bkExpect.toFixed(2)}，差 ${(bk - bkExpect).toFixed(2)}`);
 
   // Z2 净额：GROSS − LESS DISCOUNT − LESS RETURN − LESS VOID − LESS VAT ADJUSTMENT = NET AMOUNT

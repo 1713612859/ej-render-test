@@ -1028,6 +1028,8 @@ public class EjAudit {
     /** 某营业日从明细票汇总出的口径，用于与 Z 报表交叉核对。 */
     private static final class DayTotal {
         double sale, ret, voided;
+        /** 当日作废票的 Service Charge 合计 —— LESS VOID 含 SC 但税分解四项不扣,Z1 基数需加回。 */
+        double voidSc;
     }
 
     /**
@@ -1092,18 +1094,24 @@ public class EjAudit {
                 else voidSeen.add(n);
             }
             if (d == null || no.endsWith("null") || !seen.add(no) || g == null) continue;
-            // 含税口径：退货/作废票的税分解合计 = Gross + LessVAT（LessVAT 行印正值冲回），
-            // Z 报表的 LESS RETURN/VOID + VAT ON RETURN/VOID 对应的正是这个含税值
+            // 含税口径（2026-09-18 LUOJIA 实测,生成器对退货/作废分两种口径）:
+            // 退货含税 = Gross + LessVAT（折前、不含 SC,LessVAT 行印正值冲回）;
+            // 作废含税 = 票面 Amount（含 SC、按折扣冲回后的实冲净额）——
+            //   Z@09-15 = ΣAmount 9177.20,而 Σ(gross+lessVat) 8452.00,差 725.20
+            //   恰为作废票 SC 合计;VOID6 gross -16592 折扣 15000,Z 按 Amount -1592 计。
             double lessVat = sumAll(b.body(), "^LESS 12% VAT[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
             DayTotal dt = day.computeIfAbsent(d, k -> new DayTotal());
             if (b.isSale()) dt.sale += g;
-            else {
-                // Z13/Z14 统一折前口径(2026-09-18 终版,与 A 账一致):
-                // 票面合计 = Gross + LessVAT,不扣 Discount 行。
-                // Z 桶(设备→A 日结→B 逐层传递)按折前含税统计:
-                // 退货 06-21 桶 650=330+320 ✓;作废 08-07 桶 7306=4312+2994 ✓。
-                if (b.isReturn()) dt.ret += g + lessVat;
-                else dt.voided += g + lessVat;
+            else if (b.isReturn()) {
+                dt.ret += g + lessVat;
+            } else {
+                String amountRaw = find(b.body(),
+                    "^Amount[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
+                String scRaw = find(b.body(),
+                    "^Service Charge(?:\\([^)]*\\))?[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
+                double sc = scRaw == null ? 0 : num(scRaw);
+                dt.voided += amountRaw != null ? num(amountRaw) : g + lessVat + sc;
+                dt.voidSc += Math.abs(sc); // 作废票 SC 印负值,加回 Z1 基数取绝对值
             }
         }
 
@@ -1158,10 +1166,13 @@ public class EjAudit {
             double net = nz(amountOf(b, "NET AMOUNT:"));
             double otherDisc = nz(amountOf(b, "OTHER DISC:"));
 
-            // Z1 税分解
+            // Z1 税分解。LESS VOID 含作废单的 SC(见上方作废口径注释),而税分解四项
+            // 不随之扣减,基数需加回当日作废票 SC —— 2026-09-18 LUOJIA 实测:
+            // Z@09-15 差 725.20、Z@09-16 差 53.00,均恰为当日作废票 SC 合计,加回后逐分吻合。
             double bk = nz(amountOf(b, "VATABLE SALES:")) + nz(amountOf(b, "VAT AMOUNT:"))
                 + nz(amountOf(b, "VAT EXEMPT SALES:")) + nz(amountOf(b, "ZERO RATED SALES:"));
-            double bkExpect = gross - lessRet - lessVoid - lessVatAdj - otherDisc;
+            DayTotal dt1 = day.getOrDefault(bd, new DayTotal());
+            double bkExpect = gross - lessRet - lessVoid - lessVatAdj - otherDisc + dt1.voidSc;
             if (Math.abs(bk - bkExpect) > EPS) {
                 selfConsist++;
                 problems.add(String.format("[Z1 税分解] %s: 合计 %.2f，基数 %.2f，差 %.2f",
