@@ -76,8 +76,9 @@ const PAY_METHODS = [
   'MEMBER BALANCE',
 ];
 
-const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0 };
+const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0, w: 0 };
 const problems = [];
+const warns = [];
 
 for (const [idx, b] of blocks.entries()) {
   const isSale = /^ *SALES INVOICE *$/m.test(b);
@@ -165,6 +166,23 @@ for (const [idx, b] of blocks.entries()) {
         );
       }
     }
+
+    // ── W 现金找零向上取整（仅警告，不计失败）──
+    // 规则：CHANGE > 0 且 CASH 有小数 → CASH 应向上取整并重算找零；
+    // CHANGE=0 或 CASH 已是整数则保持不变。
+    // 2026-09 SANNIU 实测该功能在 B账生成侧未生效（892/1077 张未取整），
+    // 属业务口径提示而非数据算错，故只警告不计错，明细上限 10 条；
+    // 全量清单用 js/scan-cash-rounding.mjs 导出。
+    const cashVal = amountOf(b, 'CASH');
+    if (cashVal !== null && change > 0 && Math.abs(cashVal - Math.round(cashVal)) > 1e-9) {
+      stats.w++;
+      if (stats.w <= 10) {
+        warns.push(
+          `[W 取整] ${tag}: CHANGE ${change.toFixed(2)} > 0 且 CASH ${cashVal.toFixed(2)} 有小数，` +
+            `按规则应为 CASH ${Math.ceil(cashVal)} → CHANGE ${(Math.ceil(cashVal) - due).toFixed(2)}`,
+        );
+      }
+    }
   }
 
   // ── D ──
@@ -206,8 +224,17 @@ const rowsOut = [
 for (const [label, n] of rowsOut) {
   console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(48)} 异常 ${n}`);
 }
+// 数量>0 时标红（ANSI），IDEA 运行窗口 / Git Bash 均可渲染
+const red = (s) => `\u001b[1;31m${s}\u001b[0m`;
+console.log(
+  `  ${stats.w === 0 ? '✅' : '⚠'} 现金找零向上取整未执行（仅提示，不计失败）${stats.w > 0 ? red(stats.w) : 0}`,
+);
 if (problems.length) {
   console.log('\n明细:');
   problems.forEach((p) => console.log('   ' + p));
+}
+if (warns.length) {
+  console.log('\n取整提示（最多 10 条）:');
+  warns.forEach((p) => console.log('   ' + p));
 }
 console.log(line);

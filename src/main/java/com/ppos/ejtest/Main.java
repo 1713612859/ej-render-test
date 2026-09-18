@@ -12,14 +12,19 @@ public class Main {
     // ═══════════════════ 在这里改 ═══════════════════
 
     /** 导出起始日期（YYYY-MM-DD） */
-    private static final String START_DATE = "2026-09-01";
+    private static final String START_DATE = "2026-05-01";
 
     /** 导出结束日期（YYYY-MM-DD，含当天）。注意每月天数，如 9 月只有 30 天 */
     private static final String END_DATE = "2026-09-30";
 
     /** POS 设备 ID（sys_device.id）。填 null = 门店级聚合，查该门店所有设备。 */
 //    private static final Long POS_ID = 1079635083984960L;
-    private static final Long POS_ID = 205L;
+
+            // wingmaster
+//    private static final Long POS_ID = 182L;
+
+            // kyo master
+    private static final Long POS_ID = 275L;
 
     /** 云端地址，不带结尾斜杠 */
     private static final String BASE_URL = "https://devppos.luojia58.cn";
@@ -29,13 +34,22 @@ public class Main {
      *
      * <p><b>留空 = 走本地 fixture/ 目录，不连网。</b>
      */
+    // 本地测试 151
 //    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA3NTI5MjAsImduIjowLCJpYXQiOjE3ODk1NDMzMjAsInNjb3BlIjoxNTEsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTUxIiwidGVuYW50X2lkIjoxNTEsInVzZXJJZCI6MTAwMDA3MywidXNlcl9pZCI6MTAwMDA3MywidXNlcl9rZXkiOiJfdG9rZW46MTAwMDA3MzoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJ0ZXN0bGVvMSJ9.TDb3sRNbS2V0ZFxaT08UE0FYjORyMlzJ6HFFO9c1GpE";
 
 
 
 
-    // sanniu test
-    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4MjIwODgsImduIjowLCJpYXQiOjE3ODk2MTI0ODgsInNjb3BlIjoxMTUsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTE1IiwidGVuYW50X2lkIjoxMTUsInVzZXJJZCI6MjU5LCJ1c2VyX2lkIjoyNTksInVzZXJfa2V5IjoiX3Rva2VuOjI1OToyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJzYW5uaXVtYXN0ZXIifQ.FWstk7OFbSAA-tsX5kmkUYD474RMcqDtXFAOIhDczYw";
+    // sanniu test  115
+    // private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4MzQ5NzUsImduIjowLCJpYXQiOjE3ODk2MjUzNzUsInNjb3BlIjoxMTUsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTE1IiwidGVuYW50X2lkIjoxMTUsInVzZXJJZCI6MjU5LCJ1c2VyX2lkIjoyNTksInVzZXJfa2V5IjoiX3Rva2VuOjI1OToyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJzYW5uaXVtYXN0ZXIifQ.-WgIbzbhPSlP7_j4rPzO4rySQYtB34PGrSOaXjnf9Mo";
+
+    // wingmaster 107
+//    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4NTc1NjMsImduIjowLCJpYXQiOjE3ODk2NDc5NjMsInNjb3BlIjoxMDcsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTA3IiwidGVuYW50X2lkIjoxMDcsInVzZXJJZCI6MjI3LCJ1c2VyX2lkIjoyMjcsInVzZXJfa2V5IjoiX3Rva2VuOjIyNzoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJ3aW5nbWFzdGVyIn0.al4D-sJCIjm_24nWIu4FDJkNHdK39locIeY_Lawiee8";
+
+    // kyo market
+    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4NTc5OTgsImduIjowLCJpYXQiOjE3ODk2NDgzOTgsInNjb3BlIjoxMzIsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTMyIiwidGVuYW50X2lkIjoxMzIsInVzZXJJZCI6MzM2LCJ1c2VyX2lkIjozMzYsInVzZXJfa2V5IjoiX3Rva2VuOjMzNjoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJreW9tYXN0ZXIifQ.5QZc_IOIxrk4c-MqOUH2PZVaFHFABVCQmgAk53wd6PU";
+
+
     // ═══════════════════ 以下不用改 ═══════════════════
 
     public static void main(String[] args) throws Exception {

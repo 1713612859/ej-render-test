@@ -90,6 +90,7 @@ public class TxtToPdf {
         PDPageContentStream cs = beginPage(doc, page, choice.font);
         float y = pageH - MARGIN_V;
 
+        int glyphReplaced = 0;
         for (String line : lines) {
             if (y < MARGIN_V) {
                 cs.endText();
@@ -98,13 +99,44 @@ public class TxtToPdf {
                 cs = beginPage(doc, page, choice.font);
                 y = pageH - MARGIN_V;
             }
-            cs.showText(choice.cjkCapable ? line : toAscii(line));
+            String out = choice.cjkCapable ? line : toAscii(line);
+            try {
+                cs.showText(out);
+            } catch (IllegalArgumentException e) {
+                // 字体缺字形(如商品名里的 emoji U+1F64F)——逐码点替换后重画该行
+                int[] replaced = new int[1];
+                cs.showText(sanitize(out, choice.font, replaced));
+                glyphReplaced += replaced[0];
+            }
             cs.newLineAtOffset(0, -LEADING);
             y -= LEADING;
         }
 
         cs.endText();
         cs.close();
+        if (glyphReplaced > 0) {
+            System.out.println("字形替换: " + glyphReplaced + " 处(字体缺字,已用 □ 占位)");
+        }
+    }
+
+    /**
+     * 把字体无法编码的码点替换为占位符:增补平面(emoji 等)→ 全角 □(双宽,保持列对齐),
+     * 其余 → '?'。正常路径不会走到这里,只有 showText 抛缺字形异常的行才调用。
+     * replaced[0] 累加替换个数。
+     */
+    private static String sanitize(String line, PDFont font, int[] replaced) {
+        StringBuilder sb = new StringBuilder(line.length() + 8);
+        line.codePoints().forEach(cp -> {
+            String s = new String(Character.toChars(cp));
+            try {
+                font.encode(s);
+                sb.append(s);
+            } catch (Exception unencodable) {
+                sb.append(cp > 0xFFFF ? "□" : "?");
+                replaced[0]++;
+            }
+        });
+        return sb.toString();
     }
 
     // ── 字体解析 ──────────────────────────────────────────

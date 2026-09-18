@@ -712,7 +712,9 @@ public class EjAudit {
         System.out.println(SEP_LINE);
 
         int a = 0, bCnt = 0, c = 0, d = 0;
+        int w = 0;
         List<String> problems = new ArrayList<>();
+        List<String> warns = new ArrayList<>();
 
         // 各项的最大偏差：即使全部落在容差内，也要看清离阈值还有多远。
         // 容差从 0.02 放宽到 0.1 后，这几行就是判断"放宽是否过头"的唯一依据。
@@ -805,6 +807,21 @@ public class EjAudit {
                     problems.add(String.format("[C 收付] %s: 支付 %.2f - 找零 %.2f = %.2f，应付 %.2f",
                         tag, paid, chg, paid - chg, due));
                 }
+
+                // W 现金找零向上取整（仅警告，不计失败）。
+                // 规则：CHANGE > 0 且 CASH 有小数 → CASH 向上取整并重算找零；
+                // CHANGE=0 或 CASH 已是整数则保持不变。
+                // 2026-09 SANNIU 实测该功能在 B账生成侧未生效（892/1077 张未取整），
+                // 属业务口径提示而非数据算错，故不进 checks、不影响通过判定。
+                Double cashV = amountOf(b, "CASH");
+                if (cashV != null && chg > 0 && Math.abs(cashV - Math.rint(cashV)) > 1e-9) {
+                    w++;
+                    if (w <= 10) {
+                        warns.add(String.format(
+                            "[W 取整] %s: CHANGE %.2f > 0 且 CASH %.2f 有小数，按规则应为 CASH %d → CHANGE %.2f",
+                            tag, chg, cashV, (int) Math.ceil(cashV), Math.ceil(cashV) - due));
+                    }
+                }
             }
 
             // D 行合计。销售票行价 = 原价，对比 Gross；退货/作废票行价 = 实退净额
@@ -832,6 +849,10 @@ public class EjAudit {
             new Check("[金额] D 行合计 = Gross(销售) / 实退-SC(退货·作废)", d)
         );
         printChecks(checks, problems);
+        // 数量>0 时标红（ANSI），IDEA 运行窗口 / Git Bash 均可渲染
+        String wCnt = w == 0 ? "0" : "\u001b[1;31m" + w + "\u001b[0m";
+        System.out.printf("  %s 现金找零向上取整未执行（仅提示，不计失败）%s%n", w == 0 ? "✅" : "⚠\uFE0F", wCnt);
+        for (String s : warns) System.out.println("   " + s);
 
         System.out.println();
         System.out.println(" 各项最大偏差（容差 " + EPS + "，越接近容差越值得复核）");
@@ -1168,9 +1189,9 @@ public class EjAudit {
         }
         if (!problems.isEmpty()) {
             System.out.println("  明细（最多 10 条）:");
-            problems.stream().limit(10).forEach(p -> System.out.println("   " + p));
-            if (problems.size() > 10) {
-                System.out.println("   ... 另有 " + (problems.size() - 10) + " 条");
+            problems.stream().limit(50).forEach(p -> System.out.println("   " + p));
+            if (problems.size() > 50) {
+                System.out.println("   ... 另有 " + (problems.size() - 50) + " 条");
             }
         }
     }

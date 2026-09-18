@@ -6,7 +6,7 @@
  *   node js/audit-all.mjs <txt路径>       # 指定文件
  *   node js/audit-all.mjs --quiet         # 只打汇总，不打各脚本的完整输出
  *
- * 判定口径：子脚本输出里出现 "❌" 即判该项不通过。三个脚本的结论行都用
+ * 判定口径：子脚本输出里出现 "❌" 即判该项不通过。四个脚本的结论行都用
  * ✅/❌ 标记，不额外约定退出码，避免改动既有脚本。
  * audit-ej 的口味备注超宽行标的是 ⚠ 不是 ❌，属已知刻意行为，不计入失败。
  *
@@ -47,6 +47,7 @@ const SUITE = [
   ['结构 / 排序 / 排版', 'js/audit-ej.mjs'],
   ['内容完整性', 'js/audit-content.mjs'],
   ['金额勾稽', 'js/audit-amounts.mjs'],
+  ['Z-READING 勾稽', 'js/audit-zreading.mjs'],
 ];
 
 const results = [];
@@ -70,6 +71,6 @@ for (const r of results) {
 }
 const bad = results.filter((r) => r.fails > 0 || r.crashed).length;
 console.log(line);
-console.log(bad === 0 ? ' 结论: 三项校验全部通过 ✅' : ` 结论: ${bad} 项校验未通过 ❌`);
+console.log(bad === 0 ? ' 结论: 全部校验通过 ✅' : ` 结论: ${bad} 项校验未通过 ❌`);
 console.log(line);
 process.exit(bad === 0 ? 0 : 1);
