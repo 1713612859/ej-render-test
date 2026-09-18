@@ -435,8 +435,9 @@ public class EjAudit {
         }
         System.out.printf(" 脏值扫描  %s%n", dirty == 0 ? "全 0 ✅" : dirtyLine + "⚠");
 
-        // 不可渲染字符：增补平面（emoji 等）/C1 控制/私用区 —— PDF 字体缺字形会崩渲染
-        // （2026-09-17 SANNIU 商品名 emoji U+1F64F 直接中断整批 TxtToPdf），导出前应零容忍。
+        // 不可渲染字符：增补平面（emoji 等）/C1 控制/私用区 —— 仅警告不计失败：
+        // 客户备注数据不可控，TxtToPdf 已有 □ 字形兜底不会崩渲染（2026-09-18 起），
+        // 此探针用于导出侧感知与数据侧治理（商品/备注录入限制 emoji），不作为 EJ 校验失败项。
         int badGlyph = 0;
         List<String> glyphDetail = new ArrayList<>();
         for (int i = 0; i < text.length(); ) {
@@ -512,7 +513,6 @@ public class EjAudit {
             new Check("[结构] 双联配对", pairErr),
             new Check("[结构] 双联内容一致（Cashier=Customer）", pairDiff),
             new Check("[结构] 无脏值", dirty),
-            new Check("[结构] 无不可渲染字符（emoji/控制/私用区）", badGlyph),
             new Check("[结构] 行宽 ≤ " + LINE_WIDTH + "（商品名/备注等客户数据除外）", over.size()),
             new Check("[结构] 头部/尾部/金额行完整", noHeader + noFooter + emptyAmount)
         );

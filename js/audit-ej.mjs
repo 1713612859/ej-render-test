@@ -261,7 +261,7 @@ const emptyAmount = items.filter((i) =>
 console.log(`   金额行为空  ${emptyAmount} ${emptyAmount === 0 ? '✅' : '⚠'}`);
 
 console.log(`\n${'='.repeat(58)}`);
-// ── 不可渲染字符：增补平面(emoji)/C1 控制/私用区，PDF 字体缺字形会崩渲染 ──
+// ── 不可渲染字符：增补平面(emoji)/C1 控制/私用区 —— 仅警告不计失败(TxtToPdf 已有 □ 兜底) ──
 let badGlyph = 0;
 const glyphDetail = [];
 for (const ch of text) {
@@ -276,6 +276,6 @@ for (const ch of text) {
 }
 if (badGlyph) console.log(`   不可渲染字符 ${badGlyph} 个 ⚠ ${glyphDetail.join(' ')}`);
 
-const problems = orderErr + dirty + badGlyph + (byType.UNKNOWN || 0);
+const problems = orderErr + dirty + (byType.UNKNOWN || 0);
 console.log(problems === 0 ? ' 结论: 未发现结构性问题 ✅' : ` 结论: 发现 ${problems} 处待确认 ⚠`);
 console.log('='.repeat(58));
