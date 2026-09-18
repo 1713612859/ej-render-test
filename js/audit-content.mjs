@@ -116,7 +116,7 @@ function siOf(b, idx) {
 const stats = {
   sale: 0, ret: 0, void: 0,
   noRegion: 0, noItem: 0, noName: 0, badName: 0, zeroQty: 0,
-  cntMismatch: 0, qtyMismatch: 0, missField: 0,
+  cntMismatch: 0, qtyMismatch: 0, missField: 0, lineAmt: 0,
 };
 const problems = [];
 const push = (key, msg) => {
@@ -164,6 +164,15 @@ for (const [idx, b] of blocks.entries()) {
     if (Math.abs(it.qty) < QTY_EPS) {
       push('zeroQty', `[4 数量为零] ${tag}: "${it.name}" 数量 0`);
     }
+    // 行内勾稽:单价×数量=金额(容差 0.02 容纳票面两位小数舍入)。
+    // 2026-09 租户115 A账串单(3×998 替换 1×160 一类)导出到票面后此前全部放行,此检查兜住。
+    if (Math.abs(it.qty * it.price - it.amount) > 0.02) {
+      push(
+        'lineAmt',
+        `[行金额不符] ${tag}: "${it.name}" ${it.qty} × ${it.price} = ` +
+          `${(it.qty * it.price).toFixed(3)}，票面 ${it.amount}`,
+      );
+    }
   }
 
   // ── 5 / 6 计数勾稽：仅销售票有这两行 ──
@@ -210,6 +219,7 @@ const rowsOut = [
   ['3 商品名非空', stats.noName],
   ['3 商品名非占位值', stats.badName],
   ['4 商品数量非零', stats.zeroQty],
+  ['4.5 行金额 = 单价×数量', stats.lineAmt],
   ['5 商品行数 = Number of Items（仅销售票）', stats.cntMismatch],
   ['6 数量合计 = Total Qty（仅销售票）', stats.qtyMismatch],
   ['7 订单头关键字段齐全', stats.missField],

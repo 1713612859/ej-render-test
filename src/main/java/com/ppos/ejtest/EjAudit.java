@@ -557,7 +557,7 @@ public class EjAudit {
         System.out.println(SEP_LINE);
 
         int noRegion = 0, noItem = 0, noName = 0, badName = 0, zeroQty = 0;
-        int cntMismatch = 0, qtyMismatch = 0, missField = 0;
+        int cntMismatch = 0, qtyMismatch = 0, missField = 0, lineAmt = 0;
         List<String> problems = new ArrayList<>();
 
         // 统计口径的旁证：行数/数量/品名种类，用来判断解析是不是把票读全了
@@ -604,6 +604,14 @@ public class EjAudit {
                 if (Math.abs(it.qty()) < QTY_EPS) {
                     zeroQty++;
                     problems.add("[数量为零] " + tag + ": \"" + it.name() + "\" 数量 0");
+                }
+                // 行内勾稽：单价×数量=金额。容差 0.02 容纳票面金额两位小数的舍入
+                // (小数数量 × 单价的积印成两位)。2026-09 租户 115 A 账串单
+                // (3×998 替换 1×160 一类)导出到票面后现行 33 项均放行,此检查兜住。
+                if (Math.abs(it.qty() * it.price() - it.amount()) > 0.02) {
+                    lineAmt++;
+                    problems.add(String.format("[行金额不符] %s: \"%s\" %.3f × %.2f = %.3f,票面 %.2f",
+                        tag, it.name(), it.qty(), it.price(), it.qty() * it.price(), it.amount()));
                 }
             }
 
@@ -693,6 +701,7 @@ public class EjAudit {
             new Check("[内容] 商品名非空", noName),
             new Check("[内容] 商品名非占位值", badName),
             new Check("[内容] 商品数量非零", zeroQty),
+            new Check("[内容] 行金额 = 单价×数量", lineAmt),
             new Check("[内容] 商品行数 = Number of Items", cntMismatch),
             new Check("[内容] 数量合计 = Total Qty", qtyMismatch),
             new Check("[内容] 订单头关键字段齐全", missField),
@@ -711,7 +720,7 @@ public class EjAudit {
         System.out.printf(" 【三】金额勾稽（容差 %.2f）%n", EPS);
         System.out.println(SEP_LINE);
 
-        int a = 0, bCnt = 0, c = 0, d = 0;
+        int a = 0, bCnt = 0, c = 0, d = 0, e = 0;
         int w = 0;
         List<String> problems = new ArrayList<>();
         List<String> warns = new ArrayList<>();
@@ -807,6 +816,12 @@ public class EjAudit {
                     problems.add(String.format("[C 收付] %s: 支付 %.2f - 找零 %.2f = %.2f，应付 %.2f",
                         tag, paid, chg, paid - chg, due));
                 }
+                // E 欠款探针：应付>0 却一条支付行都没有 —— C 只在有支付行时成立,
+                // 缺支付行时静默通过。139 租户"撕裂单"即此形态,故单列。
+                if (!hasPay && due > EPS) {
+                    e++;
+                    problems.add(String.format("[E 欠款] %s: 应付 %.2f，票面无任何支付行", tag, due));
+                }
 
                 // W 现金找零向上取整（仅警告，不计失败）。
                 // 规则：CHANGE > 0 且 CASH 有小数 → CASH 向上取整并重算找零；
@@ -846,6 +861,7 @@ public class EjAudit {
             new Check("[金额] A 应付勾稽（销售/退货·作废符号口径见文件头）", a),
             new Check("[金额] B 税分解合计 = 毛额∓LessVAT±AddVAT∓普通折扣", bCnt),
             new Check("[金额] C 支付-找零 = 应付（仅销售票）", c),
+            new Check("[金额] E 应付>0 必有支付行（欠款探针）", e),
             new Check("[金额] D 行合计 = Gross(销售) / 实退-SC(退货·作废)", d)
         );
         printChecks(checks, problems);
