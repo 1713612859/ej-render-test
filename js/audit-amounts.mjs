@@ -76,7 +76,7 @@ const PAY_METHODS = [
   'MEMBER BALANCE',
 ];
 
-const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0, e: 0, c2: 0, w: 0 };
+const stats = { sale: 0, ret: 0, void: 0, a: 0, b: 0, c: 0, d: 0, e: 0, c2: 0, c3: 0, w: 0 };
 const problems = [];
 const warns = [];
 
@@ -159,6 +159,13 @@ for (const [idx, b] of blocks.entries()) {
     const change = amountOf(b, 'CHANGE') ?? 0;
     // E 欠款探针:应付>0 却一条支付行都没有 —— C 只在有支付行时成立,
     // 缺支付行时静默通过。139 租户"撕裂单"即此形态,故单列。
+    // C3 找零来源:CHANGE>0 必须有 CASH 支付行——电子支付不产生找零
+    if (change > EPS && amountOf(b, 'CASH') === null) {
+      stats.c3++;
+      if (stats.c3 <= 10) {
+        problems.push(`[C3 找零来源] ${tag}: CHANGE ${change} 但无 CASH 支付行`);
+      }
+    }
     if (!hasPay && due > EPS) {
       stats.e++;
       if (stats.e <= 10) {
@@ -249,6 +256,7 @@ const rowsOut = [
   ['C 支付 - 找零 = 应付（仅销售票）', stats.c],
   ['E 应付>0 必有支付行（欠款探针）', stats.e],
   ['C2 退废票支付冲销 = Amount（有支付行时）', stats.c2],
+  ['C3 找零来源=CASH（电子支付无找零）', stats.c3],
   ['D 行合计 = Gross(销售) / 实退−SC(退货·作废)', stats.d],
 ];
 for (const [label, n] of rowsOut) {

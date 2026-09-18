@@ -435,6 +435,24 @@ public class EjAudit {
         }
         System.out.printf(" 脏值扫描  %s%n", dirty == 0 ? "全 0 ✅" : dirtyLine + "⚠");
 
+        // 不可渲染字符：增补平面（emoji 等）/C1 控制/私用区 —— PDF 字体缺字形会崩渲染
+        // （2026-09-17 SANNIU 商品名 emoji U+1F64F 直接中断整批 TxtToPdf），导出前应零容忍。
+        int badGlyph = 0;
+        List<String> glyphDetail = new ArrayList<>();
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            boolean bad = cp > 0xFFFF || (cp >= 0xE000 && cp <= 0xF8FF)
+                || (cp >= 0x7F && cp <= 0x9F) || (cp < 0x20 && cp != '\n' && cp != '\r' && cp != '\t');
+            if (bad) {
+                badGlyph++;
+                if (glyphDetail.size() < 5) glyphDetail.add(String.format("U+%04X", cp));
+            }
+            i += Character.charCount(cp);
+        }
+        if (badGlyph > 0) {
+            System.out.println(" 字形探针  " + badGlyph + " 个不可渲染字符 ⚠ " + glyphDetail);
+        }
+
         // 排版：超宽行。行宽只校验交易票的非商品名区域 —— 商品名/备注是客户数据
         // （菜名、口味、留言），长度不受模板控制，超宽不算缺陷；忽略掉的单据
         // （重打/后厨/BILLING）整体不参与。
@@ -494,6 +512,7 @@ public class EjAudit {
             new Check("[结构] 双联配对", pairErr),
             new Check("[结构] 双联内容一致（Cashier=Customer）", pairDiff),
             new Check("[结构] 无脏值", dirty),
+            new Check("[结构] 无不可渲染字符（emoji/控制/私用区）", badGlyph),
             new Check("[结构] 行宽 ≤ " + LINE_WIDTH + "（商品名/备注等客户数据除外）", over.size()),
             new Check("[结构] 头部/尾部/金额行完整", noHeader + noFooter + emptyAmount)
         );
@@ -584,7 +603,7 @@ public class EjAudit {
         System.out.println(SEP_LINE);
 
         int noRegion = 0, noItem = 0, noName = 0, badName = 0, zeroQty = 0;
-        int cntMismatch = 0, qtyMismatch = 0, missField = 0, lineAmt = 0;
+        int cntMismatch = 0, qtyMismatch = 0, missField = 0, lineAmt = 0, signErr = 0, cashBad = 0;
         List<String> problems = new ArrayList<>();
 
         // 统计口径的旁证：行数/数量/品名种类，用来判断解析是不是把票读全了
@@ -639,6 +658,15 @@ public class EjAudit {
                     lineAmt++;
                     problems.add(String.format("[行金额不符] %s: \"%s\" %.3f × %.2f = %.3f,票面 %.2f",
                         tag, it.name(), it.qty(), it.price(), it.qty() * it.price(), it.amount()));
+                }
+                // 符号规范：销售票行 ≥0，退货/作废票行 ≤0（票样核实：退废行 qty/amount 均为负）。
+                // 混号说明渲染层把销售/退废模板套错，金额勾稽会跟着错。
+                if (b.isSale() ? (it.qty() < -QTY_EPS || it.amount() < -0.005)
+                               : (it.qty() > QTY_EPS || it.amount() > 0.005)) {
+                    signErr++;
+                    problems.add(String.format("[符号异常] %s: \"%s\" qty=%s amount=%.2f（%s票应为%s）",
+                        tag, it.name(), qtyStr(it.qty()), it.amount(),
+                        b.isSale() ? "销售" : "退废", b.isSale() ? "非负" : "非正"));
                 }
             }
 
@@ -712,6 +740,39 @@ public class EjAudit {
             }
         }
 
+        // ── CASH IN / CASH OUT（轻量：金额行存在 + 浮点对账）──
+        // CASH OUT 票印 Cash Sales/Cash Out/Short-Over 浮动物；当 CASH IN 与
+        // Pick Up 均为零时恒等式 SHORT/OVER = CASH SALES − CASH OUT 应成立。
+        for (Block blk : blocks) {
+            String body = blk.body();
+            if ("CASH IN".equals(blk.type())) {
+                if (amountOf(body, "CASH IN") == null) {
+                    cashBad++;
+                    problems.add("[CASH IN] 块#" + blk.idx() + ": 缺金额行 \"CASH IN <金额>\"");
+                }
+            } else if ("CASH OUT".equals(blk.type())) {
+                Double cashIn = amountOf(body, "CASH IN");
+                Double pickUp = amountOf(body, "TOTAL PICK UP CASH");
+                Double sales = amountOf(body, "CASH SALES");
+                Double out = amountOf(body, "CASH OUT");
+                String so = find(body, "^\\(-\\)SHORT/\\(\\+\\)OVER[ \\t]*([+-][\\d,]+\\.\\d{2})");
+                if (sales == null || out == null || so == null) {
+                    cashBad++;
+                    problems.add("[CASH OUT] 块#" + blk.idx() + ": 浮点对账行不全（CASH SALES/CASH OUT/SHORT-OVER）");
+                } else if (cashIn != null && Math.abs(cashIn) < 0.005
+                    && (pickUp == null || Math.abs(pickUp) < 0.005)) {
+                    // SHORT/OVER 是实物盘点值(可能含找零备用金),恒等式仅提示不判失败:
+                    // 2026-09-18 KYO 块#2492 实测 4.63 vs 934.63,同刻 X-READING CASH 9,701 印证
+                    // CASH SALES/CASH OUT 无误,差异来自抽走后的实存现金。
+                    double soV = Double.parseDouble(so.replace(",", ""));
+                    if (Math.abs(soV - (sales - out)) > EPS) {
+                        System.out.printf(" ℹ [CASH OUT] 块#%d: SHORT/OVER %.2f 与账面差额 %.2f 差 %.2f(实物盘点/备用金,人工核对)%n",
+                            blk.idx(), soV, sales - out, Math.abs(soV - (sales - out)));
+                    }
+                }
+            }
+        }
+
         System.out.printf(" 解析口径  商品行 %d 条 / 数量合计 %s / 品名 %d 种 / 检查字段 %d 个%n",
             itemRows, qtyStr(qtyTotal), nameFreq.size(), fieldChecked);
         System.out.printf(" 单票商品  平均 %.1f 行，最多 %d 行 @ %s%n",
@@ -729,9 +790,11 @@ public class EjAudit {
             new Check("[内容] 商品名非占位值", badName),
             new Check("[内容] 商品数量非零", zeroQty),
             new Check("[内容] 行金额 = 单价×数量", lineAmt),
+            new Check("[内容] 符号规范（销售行≥0 / 退废行≤0）", signErr),
             new Check("[内容] 商品行数 = Number of Items", cntMismatch),
             new Check("[内容] 数量合计 = Total Qty", qtyMismatch),
             new Check("[内容] 订单头关键字段齐全", missField),
+            new Check("[内容] CASH IN/OUT 金额与浮点对账", cashBad),
             new Check("[内容] 单号无断号（SI/RETURN/VOID，容忍重置）", seqGap)
         );
         printChecks(checks, problems);
@@ -747,7 +810,7 @@ public class EjAudit {
         System.out.printf(" 【三】金额勾稽（容差 %.2f）%n", EPS);
         System.out.println(SEP_LINE);
 
-        int a = 0, bCnt = 0, c = 0, d = 0, e = 0, c2 = 0;
+        int a = 0, bCnt = 0, c = 0, d = 0, e = 0, c2 = 0, c3 = 0;
         int w = 0;
         List<String> problems = new ArrayList<>();
         List<String> warns = new ArrayList<>();
@@ -849,6 +912,12 @@ public class EjAudit {
                     e++;
                     problems.add(String.format("[E 欠款] %s: 应付 %.2f，票面无任何支付行", tag, due));
                 }
+                // C3 找零来源：CHANGE>0 必须有 CASH 支付行——电子支付不产生找零，
+                // 出现"GCASH 付款 + 找零"即渲染/数据错。
+                if (chg > EPS && amountOf(b, "CASH") == null) {
+                    c3++;
+                    problems.add(String.format("[C3 找零来源] %s: CHANGE %.2f 但无 CASH 支付行", tag, chg));
+                }
 
                 // W 现金找零向上取整（仅警告，不计失败）。
                 // 规则：CHANGE > 0 且 CASH 有小数 → CASH 向上取整并重算找零；
@@ -905,6 +974,7 @@ public class EjAudit {
             new Check("[金额] C 支付-找零 = 应付（仅销售票）", c),
             new Check("[金额] E 应付>0 必有支付行（欠款探针）", e),
             new Check("[金额] C2 退废票支付冲销 = Amount（有支付行时）", c2),
+            new Check("[金额] C3 找零来源=CASH（电子支付无找零）", c3),
             new Check("[金额] D 行合计 = Gross(销售) / 实退-SC(退货·作废)", d)
         );
         printChecks(checks, problems);
@@ -1187,6 +1257,74 @@ public class EjAudit {
             }
         }
 
+        // ── X-READING（班次切分）轻量校验：同日各班次 SI 段首尾相接，
+        //    且整体落在当日 Z 的号段内。X 多于 Z 属正常（一 Z 多班）。──
+        int xSeqBad = 0, xRangeBad = 0;
+        {
+            Map<String, List<Block>> xByDay = new LinkedHashMap<>();
+            for (Block x : blocks) {
+                if (!"X-READING".equals(x.type())) continue;
+                String sd = find(x.body(), "Start Date ?& ?Time:[ \\t]*(\\d{4}-\\d{2}-\\d{2})");
+                xByDay.computeIfAbsent(sd == null ? "?" : sd, k -> new ArrayList<>()).add(x);
+            }
+            for (Map.Entry<String, List<Block>> en : xByDay.entrySet()) {
+                List<Block> dayX = en.getValue();
+                dayX.sort((x1, x2) -> {
+                    String t1 = x1.time() == null ? "" : x1.time();
+                    String t2 = x2.time() == null ? "" : x2.time();
+                    return t1.compareTo(t2);
+                });
+                Long prevEnd = null;
+                for (Block x : dayX) {
+                    Long beg = longOf(x.body(), "Beg. SI #:");
+                    Long end = longOf(x.body(), "End. SI #:");
+                    if (beg == null || end == null || end < beg) continue;
+                    // 无销售班次 SI 计数器不推进：beg == prevEnd（沿用上期末号）属正常，
+                    // 与 Z9「无销售时 Beg=End=上期 End 属正常」同一约定；beg > prevEnd+1 才是断号。
+                    if (prevEnd != null && beg != prevEnd + 1 && !beg.equals(prevEnd)) {
+                        xSeqBad++;
+                        problems.add(String.format("[X 衔接] %s X@%s: SI %d 接不上前班次末号 %d",
+                            en.getKey(), x.time(), beg, prevEnd));
+                    }
+                    prevEnd = end;
+                }
+                // 号段包含关系：允许跨午夜班次 —— X 的 SI 段可落在
+                // [起日Z.beg, 止日Z.end] 联合区间(实测 08-11 20:54~08-12 22:05 的
+                // 25 小时班次 SI 70~147 恰为 Z@08-12 号段)。
+                for (Block z : zs) {
+                    if (!en.getKey().equals(z.businessDate())) continue;
+                    Long zBeg = longOf(z.body(), "Beg. SI #:");
+                    if (zBeg == null) break;
+                    // 止日 Z 的 end(窗口末日的 Z)
+                    Long zEndFinal = zBeg;
+                    String lastDay = en.getKey();
+                    for (Block x : dayX) {
+                        if (x.time() != null) lastDay = x.time().substring(0, 10);
+                    }
+                    for (Block z2 : zs) {
+                        if (lastDay.equals(z2.businessDate())) {
+                            Long e2 = longOf(z2.body(), "End. SI #:");
+                            if (e2 != null) zEndFinal = e2;
+                        }
+                    }
+                    for (Block x : dayX) {
+                        Long beg = longOf(x.body(), "Beg. SI #:");
+                        Long end = longOf(x.body(), "End. SI #:");
+                        if (beg == null || end == null) continue;
+                        // 换班时无新单，Beg/End 显示上期末号（zBeg-1 且 Beg==End）属正常
+                        boolean ok = (beg >= zBeg && end <= zEndFinal)
+                            || (beg == zBeg - 1 && end.equals(beg));
+                        if (!ok) {
+                            xRangeBad++;
+                            problems.add(String.format("[X 号段] %s X@%s: SI %d~%d 越出 Z 号段 %d~%d",
+                                en.getKey(), x.time(), beg, end, zBeg, zEndFinal));
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
         List<Check> checks = List.of(
             new Check("[Z] 税分解 = 毛额-退货-作废-VAT调整-普通折扣", selfConsist),
             new Check("[Z] 净额 = 毛额-折扣-退货-作废-VAT调整", netErr),
@@ -1202,7 +1340,9 @@ public class EjAudit {
             new Check("[Z] 毛额 = 当日销售票合计", xGross),
             new Check("[Z] 作废额 = 当日作废票合计（含税）", xVoid),
             new Check("[Z] 退货额 = 当日退货票合计（含税）", xRet),
-            new Check("[Z] 交易票均在 Z 窗口内（末日之前）", uncovered)
+            new Check("[Z] 交易票均在 Z 窗口内（末日之前）", uncovered),
+            new Check("[X] 班次 SI 段首尾相接（同日内）", xSeqBad),
+            new Check("[X] 班次 SI 段 ⊆ 当日 Z 号段", xRangeBad)
         );
         printChecks(checks, problems);
         System.out.printf("   ℹ 覆盖营业日 %d 天，Z Counter %s → %s%n",

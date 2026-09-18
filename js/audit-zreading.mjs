@@ -90,7 +90,7 @@ for (const b of blocks) {
 }
 
 // ── 逐张校验 ──
-const stats = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0, z6: 0, z7: 0, z8: 0, z9: 0, z10: 0, z11: 0, z12: 0, z13: 0, z14: 0, z15: 0 };
+const stats = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0, z6: 0, z7: 0, z8: 0, z9: 0, z10: 0, z11: 0, z12: 0, z13: 0, z14: 0, z15: 0, xSeq: 0, xRange: 0 };
 const problems = [];
 const push = (k, msg) => { stats[k]++; if (stats[k] <= 5) problems.push(msg); };
 
@@ -217,6 +217,59 @@ console.log(`\n${line}`);
 console.log(` Z-READING 勾稽 — ${zs.length} 张 Z 报表 / 覆盖 ${new Set(zs.map((z) => z.bd)).size} 个营业日`);
 console.log(` 文件 ${file.split(/[\\/]/).pop()}`);
 console.log(line);
+// ── X-READING(班次切分):同日 SI 段首尾相接 + 落在 Z 号段(允许跨午夜班次/无销售班次沿用上期末号) ──
+{
+  const longOf2 = (b2, label) => {
+    const m = b2.match(new RegExp(`^${label}\s+(\d+)\s*$`, 'm'));
+    return m ? Number(m[1]) : null;
+  };
+  const xByDay = new Map();
+  for (const [idx, b2] of blocks.entries()) {
+    if (!/^ *X-READING *$/m.test(b2) || isIgnored(b2)) continue;
+    const sd = (b2.match(/Start Date ?& ?Time:\s*(\d{4}-\d{2}-\d{2})/) || [])[1] || '?';
+    const time = (b2.match(/Report Date ?& ?Time:\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/) || [])[1] || '';
+    if (!xByDay.has(sd)) xByDay.set(sd, []);
+    xByDay.get(sd).push({ time, body: b2 });
+  }
+  for (const [sd, dayX] of xByDay) {
+    dayX.sort((a2, b3) => a2.time.localeCompare(b3.time));
+    let prevEnd = null;
+    for (const x of dayX) {
+      const beg = longOf2(x.body, 'Beg\. SI #:');
+      const end = longOf2(x.body, 'End\. SI #:');
+      if (beg === null || end === null || end < beg) continue;
+      if (prevEnd !== null && beg !== prevEnd + 1 && beg !== prevEnd) {
+        stats.xSeq++;
+        if (stats.xSeq <= 5) push('xSeq', `[X 衔接] ${sd} X@${x.time}: SI ${beg} 接不上前班次末号 ${prevEnd}`);
+      }
+      prevEnd = end;
+    }
+    const z = zs.find((z2) => z2.bd === sd);
+    if (!z) continue;
+    const zBeg = longOf2(z.body, 'Beg\. SI #:');
+    if (zBeg === null) continue;
+    let zEndFinal = zBeg;
+    const lastDay = dayX.length && dayX[dayX.length - 1].time
+      ? dayX[dayX.length - 1].time.slice(0, 10) : sd;
+    for (const z2 of zs) {
+      if (z2.bd === lastDay) {
+        const e2 = longOf2(z2.body, 'End\. SI #:');
+        if (e2 !== null) zEndFinal = e2;
+      }
+    }
+    for (const x of dayX) {
+      const beg = longOf2(x.body, 'Beg\. SI #:');
+      const end = longOf2(x.body, 'End\. SI #:');
+      if (beg === null || end === null) continue;
+      const ok = (beg >= zBeg && end <= zEndFinal) || (beg === zBeg - 1 && end === beg);
+      if (!ok) {
+        stats.xRange++;
+        if (stats.xRange <= 5) push('xRange', `[X 号段] ${sd} X@${x.time}: SI ${beg}~${end} 越出 Z 号段 ${zBeg}~${zEndFinal}`);
+      }
+    }
+  }
+}
+
 const rows = [
   ['Z1 税分解 = 毛额-退货-作废-VAT调整-其他折扣', stats.z1],
   ['Z2 净额 = 毛额-折扣-退货-作废-VAT调整', stats.z2],
@@ -233,6 +286,8 @@ const rows = [
   ['Z13 作废额 = 当日作废票合计（含税）', stats.z13],
   ['Z14 退货额 = 当日退货票合计（含税）', stats.z14],
   ['Z15 交易票均在 Z 窗口内（末日之前）', stats.z15],
+  ['X 班次 SI 段首尾相接（同日内）', stats.xSeq],
+  ['X 班次 SI 段 ⊆ Z 号段（跨日班次允许）', stats.xRange],
 ];
 for (const [label, n] of rows) {
   console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(44)} 异常 ${n}`);

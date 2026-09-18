@@ -261,6 +261,21 @@ const emptyAmount = items.filter((i) =>
 console.log(`   金额行为空  ${emptyAmount} ${emptyAmount === 0 ? '✅' : '⚠'}`);
 
 console.log(`\n${'='.repeat(58)}`);
-const problems = orderErr + dirty + (byType.UNKNOWN || 0);
+// ── 不可渲染字符：增补平面(emoji)/C1 控制/私用区，PDF 字体缺字形会崩渲染 ──
+let badGlyph = 0;
+const glyphDetail = [];
+for (const ch of text) {
+  const cp = ch.codePointAt(0);
+  const bad = cp > 0xffff || (cp >= 0xe000 && cp <= 0xf8ff)
+    || (cp >= 0x7f && cp <= 0x9f)
+    || (cp < 0x20 && ch !== '\n' && ch !== '\r' && ch !== '\t');
+  if (bad) {
+    badGlyph++;
+    if (glyphDetail.length < 5) glyphDetail.push('U+' + cp.toString(16).toUpperCase());
+  }
+}
+if (badGlyph) console.log(`   不可渲染字符 ${badGlyph} 个 ⚠ ${glyphDetail.join(' ')}`);
+
+const problems = orderErr + dirty + badGlyph + (byType.UNKNOWN || 0);
 console.log(problems === 0 ? ' 结论: 未发现结构性问题 ✅' : ` 结论: 发现 ${problems} 处待确认 ⚠`);
 console.log('='.repeat(58));

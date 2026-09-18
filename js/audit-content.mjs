@@ -116,7 +116,7 @@ function siOf(b, idx) {
 const stats = {
   sale: 0, ret: 0, void: 0,
   noRegion: 0, noItem: 0, noName: 0, badName: 0, zeroQty: 0,
-  cntMismatch: 0, qtyMismatch: 0, missField: 0, lineAmt: 0,
+  cntMismatch: 0, qtyMismatch: 0, missField: 0, lineAmt: 0, signErr: 0, cashBad: 0,
 };
 const problems = [];
 const push = (key, msg) => {
@@ -166,6 +166,11 @@ for (const [idx, b] of blocks.entries()) {
     }
     // 行内勾稽:单价×数量=金额(容差 0.02 容纳票面两位小数舍入)。
     // 2026-09 租户115 A账串单(3×998 替换 1×160 一类)导出到票面后此前全部放行,此检查兜住。
+    // 符号规范:销售票行 >=0,退货/作废票行 <=0(票样核实:退废行 qty/amount 均为负)
+    if (isSale ? (it.qty < -QTY_EPS || it.amount < -0.005)
+               : (it.qty > QTY_EPS || it.amount > 0.005)) {
+      push('signErr', `[符号异常] ${tag}: "${it.name}" qty=${it.qty} amount=${it.amount}(${isSale ? '销售' : '退废'}票应为${isSale ? '非负' : '非正'})`);
+    }
     if (Math.abs(it.qty * it.price - it.amount) > 0.02) {
       push(
         'lineAmt',
@@ -213,6 +218,33 @@ console.log(`\n${line}`);
 console.log(` 内容完整性 — 销售 ${stats.sale} / 退货 ${stats.ret} / 作废 ${stats.void} 张`);
 console.log(` 文件 ${file.split(/[\\/]/).pop()}`);
 console.log(line);
+// ── CASH IN / CASH OUT(轻量:金额行存在;SHORT/OVER 恒等式仅提示——实物盘点值) ──
+{
+  const amountLine = (b2, label) => {
+    const m = b2.match(new RegExp(`^${label}\\s+(-?[\\d,]+\\.\\d{2})\\s*$`, 'm'));
+    return m ? num(m[1]) : null;
+  };
+  for (const [idx, b2] of blocks.entries()) {
+    const isCashIn = /^ *CASH IN *$/m.test(b2);
+    const isCashOut = /^ *CASH OUT *$/m.test(b2);
+    if ((!isCashIn && !isCashOut) || isIgnored(b2)) continue;
+    if (isCashIn) {
+      if (amountLine(b2, 'CASH IN') === null) {
+        stats.cashBad++;
+        if (stats.cashBad <= 10) problems.push(`[CASH IN] 块#${idx}: 缺金额行 "CASH IN <金额>"`);
+      }
+    } else {
+      const sales = amountLine(b2, 'CASH SALES');
+      const out = amountLine(b2, 'CASH OUT');
+      const so = (b2.match(/^\(-\)SHORT\/\(\+\)OVER\s*([+-][\d,]+\.\d{2})\s*$/m) || [])[1];
+      if (sales === null || out === null || so === undefined) {
+        stats.cashBad++;
+        if (stats.cashBad <= 10) problems.push(`[CASH OUT] 块#${idx}: 浮点对账行不全`);
+      }
+    }
+  }
+}
+
 const rowsOut = [
   ['1 商品区表头存在', stats.noRegion],
   ['2 商品行 ≥ 1（有订单必有商品）', stats.noItem],
@@ -220,6 +252,8 @@ const rowsOut = [
   ['3 商品名非占位值', stats.badName],
   ['4 商品数量非零', stats.zeroQty],
   ['4.5 行金额 = 单价×数量', stats.lineAmt],
+  ['4.6 符号规范(销售≥0/退废≤0)', stats.signErr],
+  ['4.7 CASH IN/OUT 金额行', stats.cashBad],
   ['5 商品行数 = Number of Items（仅销售票）', stats.cntMismatch],
   ['6 数量合计 = Total Qty（仅销售票）', stats.qtyMismatch],
   ['7 订单头关键字段齐全', stats.missField],
