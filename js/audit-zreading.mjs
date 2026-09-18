@@ -202,6 +202,18 @@ for (let i = 0; i < zs.length; i++) {
   if (i > 0) {
     const p = zs[i - 1];
     if (z.zc && p.zc && Number(z.zc) !== Number(p.zc) + 1) push('z7', `[Z7 计数器] ${tag}: 上期 ${p.zc} → 本期 ${z.zc}，非连续`);
+    // Z-counter 按天维度累加:每日恰好一张 Z,营业日逐日连续(2026-09-18 业务确认)
+    if (z.bd && p.bd && z.bd !== '?') {
+      if (z.bd === p.bd) {
+        push('z7', `[Z7 计数器] ${tag}: 营业日 ${z.bd} 出现第二张 Z（应每日一张）`);
+      } else {
+        const d0 = Date.parse(p.bd);
+        const d1 = Date.parse(z.bd);
+        if (!Number.isNaN(d0) && !Number.isNaN(d1) && d1 - d0 !== 86400000) {
+          push('z7', `[Z7 计数器] ${tag}: 营业日 ${p.bd} → ${z.bd} 跳档（counter 按天累加，日期应逐日连续）`);
+        }
+      }
+    }
     if (Math.abs(z.previous - p.present) > EPS) push('z8', `[Z8 累计链] ${tag}: 本期上期累计 ${z.previous.toFixed(2)} ≠ 上期本期累计 ${p.present.toFixed(2)}`);
     const begSi = longOf(b, 'Beg\\. SI #:');
     const prevEnd = longOf(p.body, 'End\\. SI #:');
@@ -277,7 +289,7 @@ const rows = [
   ['Z4 折扣明细合计 = LESS DISCOUNT', stats.z4],
   ['Z5 销售调整 = LESS RETURN / LESS VOID', stats.z5],
   ['Z6 VAT调整明细合计 = LESS VAT ADJUSTMENT', stats.z6],
-  ['Z7 Z Counter 逐张递增', stats.z7],
+  ['Z7 Z Counter 逐日+1 且营业日连续（每日一张）', stats.z7],
   ['Z8 累计销售链首尾相接', stats.z8],
   ['Z9 SI 号段不重叠', stats.z9],
   ['Z10 报表日期段规范', stats.z10],

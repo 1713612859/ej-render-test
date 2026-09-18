@@ -1240,6 +1240,24 @@ public class EjAudit {
                     counterErr++;
                     problems.add(String.format("[Z7 计数器] %s: 上期 %d → 本期 %d，非连续", tag, zp, zc));
                 }
+                // Z-counter 按天维度累加：每日恰好一张 Z，营业日逐日连续推进，
+                // counter 与日期序一一对应（2026-09-18 业务确认）。
+                String bdp = p.businessDate();
+                if (bd != null && bdp != null && !"?".equals(bd) && !"?".equals(bdp)) {
+                    if (bd.equals(bdp)) {
+                        counterErr++;
+                        problems.add("[Z7 计数器] " + tag + ": 营业日 " + bd + " 出现第二张 Z（应每日一张）");
+                    } else {
+                        try {
+                            java.time.LocalDate d0 = java.time.LocalDate.parse(bdp);
+                            java.time.LocalDate d1 = java.time.LocalDate.parse(bd);
+                            if (!d1.equals(d0.plusDays(1))) {
+                                counterErr++;
+                                problems.add(String.format("[Z7 计数器] %s: 营业日 %s → %s 跳档（counter 按天累加，日期应逐日连续）", tag, bdp, bd));
+                            }
+                        } catch (Exception ignore) { /* 日期非法留给 Z10 */ }
+                    }
+                }
                 double prevPresent = nz(amountOf(p.body(), "Present Accumulated Sales"));
                 if (Math.abs(previous - prevPresent) > EPS) {
                     accErr++;
@@ -1332,7 +1350,7 @@ public class EjAudit {
             new Check("[Z] 折扣明细合计 = LESS DISCOUNT", discErr),
             new Check("[Z] 销售调整 = LESS RETURN / LESS VOID", adjErr),
             new Check("[Z] VAT 调整明细合计 = LESS VAT ADJUSTMENT", vatAdjErr),
-            new Check("[Z] Z Counter 逐张递增", counterErr),
+            new Check("[Z] Z Counter 逐日+1 且营业日连续（每日一张）", counterErr),
             new Check("[Z] 累计销售链首尾相接", accErr),
             new Check("[Z] SI 号段不重叠", siErr),
             new Check("[Z] 报表日期段规范", dateErr),
