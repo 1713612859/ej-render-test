@@ -153,7 +153,7 @@ public class CloudEjDataSource implements EjDataSource {
                     body = in.readAllBytes();
                 }
                 System.out.printf("  [gzip] %s : %.0f KB -> %.0f KB (压缩到 %.0f%%)%n",
-                        req.uri().getPath(), raw / 1024.0, body.length / 1024.0, raw * 100.0 / body.length);
+                        req.uri(), raw / 1024.0, body.length / 1024.0, raw * 100.0 / body.length);
             }
             String text = body == null ? "" : new String(body, StandardCharsets.UTF_8);
             if (resp.statusCode() != 200) {
@@ -168,7 +168,9 @@ public class CloudEjDataSource implements EjDataSource {
         }
     }
 
-    /** 剥掉 RuoYi 的 R&lt;&gt; 包装，取 data；code != 200 直接抛。 */
+    /**
+     * 剥掉 RuoYi 的 R&lt;&gt; 包装，取 data；code != 200 直接抛。
+     */
     private String unwrap(String body) {
         JsonNode root = readTree(body);
         JsonNode code = root.get("code");
@@ -187,7 +189,9 @@ public class CloudEjDataSource implements EjDataSource {
         return data == null || data.isNull() ? "{}" : data.toString();
     }
 
-    /** 解析 JWT payload，报告过期时间与租户信息，帮助快速定位 401 原因。 */
+    /**
+     * 解析 JWT payload，报告过期时间与租户信息，帮助快速定位 401 原因。
+     */
     private String describeToken() {
         try {
             String[] parts = token.split("\\.");

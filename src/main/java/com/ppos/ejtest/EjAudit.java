@@ -663,10 +663,13 @@ public class EjAudit {
                     zeroQty++;
                     problems.add("[数量为零] " + tag + ": \"" + it.name() + "\" 数量 0");
                 }
-                // 行内勾稽：单价×数量=金额。容差 0.02 容纳票面金额两位小数的舍入
-                // (小数数量 × 单价的积印成两位)。2026-09 租户 115 A 账串单
-                // (3×998 替换 1×160 一类)导出到票面后现行 33 项均放行,此检查兜住。
-                if (Math.abs(it.qty() * it.price() - it.amount()) > 0.02) {
+                // 行内勾稽:单价×数量=金额。金额(row_total)是权威,单价/数量是展示值,
+                // 两种合法舍入需容差(2026-09-18 SANNIU 实测三类):
+                //  A 折扣净额反算单价: unit_price=round(amount/qty,2) → 差≤qty×0.005
+                //  C 称重数量舍入两位: qty=round(真实qty,2) → 差≤price×0.005
+                //  B 手输行单价真脏(CHARGE 150 vs 225) → 超容差照报
+                double lineTol = Math.max(0.02, Math.max(Math.abs(it.qty()) * 0.0055, it.price() * 0.0055));
+                if (Math.abs(it.qty() * it.price() - it.amount()) > lineTol) {
                     lineAmt++;
                     problems.add(String.format("[行金额不符] %s: \"%s\" %.3f × %.2f = %.3f,票面 %.2f",
                         tag, it.name(), it.qty(), it.price(), it.qty() * it.price(), it.amount()));
@@ -1450,7 +1453,7 @@ public class EjAudit {
                 c.failures() == 0 ? "✅" : "❌", c.label(), c.failures());
         }
         if (!problems.isEmpty()) {
-            System.out.println("  明细（最多 10 条）:");
+            System.out.println("  明细（最多 50 条）:");
             problems.stream().limit(50).forEach(p -> System.out.println("   " + p));
             if (problems.size() > 50) {
                 System.out.println("   ... 另有 " + (problems.size() - 50) + " 条");

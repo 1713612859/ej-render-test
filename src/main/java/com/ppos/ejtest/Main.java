@@ -18,13 +18,17 @@ public class Main {
     private static final String END_DATE = "2026-09-30";
 
     /** POS 设备 ID（sys_device.id）。填 null = 门店级聚合，查该门店所有设备。 */
+    // default 151 测试门店
 //    private static final Long POS_ID = 1079635083984960L;
 
             // wingmaster
 //    private static final Long POS_ID = 182L;
 
             // kyo master
-    private static final Long POS_ID = 275L;
+//    private static final Long POS_ID = 275L;
+
+    //  sanniu 火锅
+    private static final Long POS_ID = 205L;
 
     /** 云端地址，不带结尾斜杠 */
     private static final String BASE_URL = "https://devppos.luojia58.cn";
@@ -41,13 +45,13 @@ public class Main {
 
 
     // sanniu test  115
-    // private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4MzQ5NzUsImduIjowLCJpYXQiOjE3ODk2MjUzNzUsInNjb3BlIjoxMTUsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTE1IiwidGVuYW50X2lkIjoxMTUsInVzZXJJZCI6MjU5LCJ1c2VyX2lkIjoyNTksInVzZXJfa2V5IjoiX3Rva2VuOjI1OToyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJzYW5uaXVtYXN0ZXIifQ.-WgIbzbhPSlP7_j4rPzO4rySQYtB34PGrSOaXjnf9Mo";
+     private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4MzQ5NzUsImduIjowLCJpYXQiOjE3ODk2MjUzNzUsInNjb3BlIjoxMTUsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTE1IiwidGVuYW50X2lkIjoxMTUsInVzZXJJZCI6MjU5LCJ1c2VyX2lkIjoyNTksInVzZXJfa2V5IjoiX3Rva2VuOjI1OToyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJzYW5uaXVtYXN0ZXIifQ.-WgIbzbhPSlP7_j4rPzO4rySQYtB34PGrSOaXjnf9Mo";
 
     // wingmaster 107
 //    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4NTc1NjMsImduIjowLCJpYXQiOjE3ODk2NDc5NjMsInNjb3BlIjoxMDcsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTA3IiwidGVuYW50X2lkIjoxMDcsInVzZXJJZCI6MjI3LCJ1c2VyX2lkIjoyMjcsInVzZXJfa2V5IjoiX3Rva2VuOjIyNzoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJ3aW5nbWFzdGVyIn0.al4D-sJCIjm_24nWIu4FDJkNHdK39locIeY_Lawiee8";
 
-    // kyo market
-    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4NTc5OTgsImduIjowLCJpYXQiOjE3ODk2NDgzOTgsInNjb3BlIjoxMzIsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTMyIiwidGVuYW50X2lkIjoxMzIsInVzZXJJZCI6MzM2LCJ1c2VyX2lkIjozMzYsInVzZXJfa2V5IjoiX3Rva2VuOjMzNjoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJreW9tYXN0ZXIifQ.5QZc_IOIxrk4c-MqOUH2PZVaFHFABVCQmgAk53wd6PU";
+    // kyo market 132
+//    private static final String TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdCI6IjIiLCJleHAiOjE3OTA4NTc5OTgsImduIjowLCJpYXQiOjE3ODk2NDgzOTgsInNjb3BlIjoxMzIsInN0b3JlX2lkIjowLCJ0ZW5hbnRfY29kZSI6IlQwMDAwMTMyIiwidGVuYW50X2lkIjoxMzIsInVzZXJJZCI6MzM2LCJ1c2VyX2lkIjozMzYsInVzZXJfa2V5IjoiX3Rva2VuOjMzNjoyOiIsInVzZXJfdHlwZSI6IjAxIiwidXNlcm5hbWUiOiJreW9tYXN0ZXIifQ.5QZc_IOIxrk4c-MqOUH2PZVaFHFABVCQmgAk53wd6PU";
 
 
     // ═══════════════════ 以下不用改 ═══════════════════
