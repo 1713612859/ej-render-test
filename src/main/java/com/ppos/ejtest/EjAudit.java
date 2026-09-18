@@ -1089,17 +1089,13 @@ public class EjAudit {
             double lessVat = sumAll(b.body(), "^LESS 12% VAT[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
             DayTotal dt = day.computeIfAbsent(d, k -> new DayTotal());
             if (b.isSale()) dt.sale += g;
-            else if (b.isReturn()) {
-                // Z14 退货(设备口径,2026-09-18 终审):Z 桶按折前含税统计
-                // (06-21 桶 580.39+69.61=650 与 A 日结/设备一致),票面合计不扣 Discount。
-                dt.ret += g + lessVat;
-            } else {
-                // Z13 作废(实退口径,2026-09-18 生成器已改):Z 桶按实退净额含税统计
-                // (08-07 桶 7294=4300+2994),票面合计须扣 Discount 行
-                // (void#19: -4312+12=-4300 ✓、void#27: -5032+32=-5000 ✓)。
-                double lineDisc = sumAll(b.body(),
-                    "^(?:Regular Discount|Discount(?: 20%)?|LESS DISCOUNT)[ \\t]+([\\d,]+\\.\\d{2})[ \\t]*$");
-                dt.voided += g + lessVat + lineDisc;
+            else {
+                // Z13/Z14 统一折前口径(2026-09-18 终版,与 A 账一致):
+                // 票面合计 = Gross + LessVAT,不扣 Discount 行。
+                // Z 桶(设备→A 日结→B 逐层传递)按折前含税统计:
+                // 退货 06-21 桶 650=330+320 ✓;作废 08-07 桶 7306=4312+2994 ✓。
+                if (b.isReturn()) dt.ret += g + lessVat;
+                else dt.voided += g + lessVat;
             }
         }
 
