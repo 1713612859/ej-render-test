@@ -273,13 +273,18 @@ console.log(line);
     if (!z) continue;
     const zBeg = longOf2(z.body, 'Beg\. SI #:');
     if (zBeg === null) continue;
-    let zEndFinal = zBeg;
+    // 终值默认取当日 Z 自己的 End;末班次跨午夜且止日 Z 已存在时才延伸为止日 Z 的 End。
+    // 踩过(2026-09-18 SANNIU):末班次 X@09-11 00:56 跨午夜,止日 Z@09-11 未结账不存在,
+    // 旧实现退化成 zBeg → X 10945~10966 被误判越出 Z 段 10931~10931。
+    let zEndFinal = longOf2(z.body, 'End\. SI #:') ?? zBeg;
     const lastDay = dayX.length && dayX[dayX.length - 1].time
       ? dayX[dayX.length - 1].time.slice(0, 10) : sd;
-    for (const z2 of zs) {
-      if (z2.bd === lastDay) {
-        const e2 = longOf2(z2.body, 'End\. SI #:');
-        if (e2 !== null) zEndFinal = e2;
+    if (lastDay !== sd) {
+      for (const z2 of zs) {
+        if (z2.bd === lastDay) {
+          const e2 = longOf2(z2.body, 'End\. SI #:');
+          if (e2 !== null) zEndFinal = e2;
+        }
       }
     }
     for (const x of dayX) {

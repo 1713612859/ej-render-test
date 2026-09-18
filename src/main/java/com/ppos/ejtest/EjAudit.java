@@ -1351,16 +1351,21 @@ public class EjAudit {
                     if (!en.getKey().equals(z.businessDate())) continue;
                     Long zBeg = longOf(z.body(), "Beg. SI #:");
                     if (zBeg == null) break;
-                    // 止日 Z 的 end(窗口末日的 Z)
-                    Long zEndFinal = zBeg;
+                    // 终值默认取当日 Z 自己的 End;末班次跨午夜且止日 Z 已存在时才延伸为止日 Z 的 End。
+                    // 踩过(2026-09-18 SANNIU):末班次 X@09-11 00:56 跨午夜,止日 Z@09-11 未结账不存在,
+                    // 旧实现退化成 zBeg → X 10945~10966 被误判越出 Z 段 10931~10931。
+                    Long zEndSelf = longOf(z.body(), "End. SI #:");
+                    Long zEndFinal = zEndSelf == null ? zBeg : zEndSelf;
                     String lastDay = en.getKey();
                     for (Block x : dayX) {
                         if (x.time() != null) lastDay = x.time().substring(0, 10);
                     }
-                    for (Block z2 : zs) {
-                        if (lastDay.equals(z2.businessDate())) {
-                            Long e2 = longOf(z2.body(), "End. SI #:");
-                            if (e2 != null) zEndFinal = e2;
+                    if (!lastDay.equals(en.getKey())) {
+                        for (Block z2 : zs) {
+                            if (lastDay.equals(z2.businessDate())) {
+                                Long e2 = longOf(z2.body(), "End. SI #:");
+                                if (e2 != null) zEndFinal = e2;
+                            }
                         }
                     }
                     for (Block x : dayX) {
