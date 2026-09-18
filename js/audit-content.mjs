@@ -171,9 +171,9 @@ for (const [idx, b] of blocks.entries()) {
                : (it.qty > QTY_EPS || it.amount > 0.005)) {
       push('signErr', `[符号异常] ${tag}: "${it.name}" qty=${it.qty} amount=${it.amount}(${isSale ? '销售' : '退废'}票应为${isSale ? '非负' : '非正'})`);
     }
-    // 金额是权威;单价(净额反算两位)/数量(称重舍两位)的合法舍入取比例容差,真脏行照报
-    const lineTol = Math.max(0.02, Math.max(Math.abs(it.qty) * 0.0055, it.price * 0.0055));
-    if (Math.abs(it.qty * it.price - it.amount) > lineTol) {
+    // 恒等式规格(2026-09-18 确认): U.Price × Qty = 行金额,严格成立(容差仅 0.02);
+    // 折扣折入仅当净额/数量为精确两位小数,否则必须分解式(原价×qty−Discount)。
+    if (Math.abs(it.qty * it.price - it.amount) > 0.02) {
       push(
         'lineAmt',
         `[行金额不符] ${tag}: "${it.name}" ${it.qty} × ${it.price} = ` +
