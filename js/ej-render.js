@@ -6,11 +6,7 @@ var EJ = (() => {
   var __getProtoOf = Object.getPrototypeOf;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __commonJS = (cb, mod) => function __require() {
-    try {
-      return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-    } catch (e) {
-      throw mod = 0, e;
-    }
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
   };
   var __export = (target, all) => {
     for (var name in all)
@@ -34,12 +30,12 @@ var EJ = (() => {
   ));
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // node_modules/dayjs/dayjs.min.js
+  // ../../ej-render-test/out/build-deps/node_modules/dayjs/dayjs.min.js
   var require_dayjs_min = __commonJS({
-    "node_modules/dayjs/dayjs.min.js"(exports, module) {
-      !(function(t, e) {
+    "../../ej-render-test/out/build-deps/node_modules/dayjs/dayjs.min.js"(exports, module) {
+      !function(t, e) {
         "object" == typeof exports && "undefined" != typeof module ? module.exports = e() : "function" == typeof define && define.amd ? define(e) : (t = "undefined" != typeof globalThis ? globalThis : t || self).dayjs = e();
-      })(exports, (function() {
+      }(exports, function() {
         "use strict";
         var t = 1e3, e = 6e4, n = 36e5, r = "millisecond", i = "second", s = "minute", u = "hour", a = "day", o = "week", c = "month", f = "quarter", h = "year", d = "date", l = "Invalid Date", $ = /^(\d{4})[-/]?(\d{1,2})?[-/]?(\d{0,2})[Tt\s]*(\d{1,2})?:?(\d{1,2})?:?(\d{1,2})?[.:]?(\d+)?$/, y = /\[([^\]]+)]|Y{1,4}|M{1,4}|D{1,2}|d{1,4}|H{1,2}|h{1,2}|a|A|m{1,2}|s{1,2}|Z{1,2}|SSS/g, M = { name: "en", weekdays: "Sunday_Monday_Tuesday_Wednesday_Thursday_Friday_Saturday".split("_"), months: "January_February_March_April_May_June_July_August_September_October_November_December".split("_"), ordinal: function(t2) {
           var e2 = ["th", "st", "nd", "rd"], n2 = t2 % 100;
@@ -85,13 +81,13 @@ var EJ = (() => {
         b.l = w, b.i = S, b.w = function(t2, e2) {
           return O(t2, { locale: e2.$L, utc: e2.$u, x: e2.$x, $offset: e2.$offset });
         };
-        var _ = (function() {
+        var _ = function() {
           function M2(t2) {
             this.$L = w(t2.locale, null, true), this.parse(t2), this.$x = this.$x || t2.x || {}, this[p] = true;
           }
           var m2 = M2.prototype;
           return m2.parse = function(t2) {
-            this.$d = (function(t3) {
+            this.$d = function(t3) {
               var e2 = t3.date, n2 = t3.utc;
               if (null === e2) return /* @__PURE__ */ new Date(NaN);
               if (b.u(e2)) return /* @__PURE__ */ new Date();
@@ -104,7 +100,7 @@ var EJ = (() => {
                 }
               }
               return new Date(e2);
-            })(t2), this.init();
+            }(t2), this.init();
           }, m2.init = function() {
             var t2 = this.$d;
             this.$y = t2.getFullYear(), this.$M = t2.getMonth(), this.$D = t2.getDate(), this.$W = t2.getDay(), this.$H = t2.getHours(), this.$m = t2.getMinutes(), this.$s = t2.getSeconds(), this.$ms = t2.getMilliseconds();
@@ -191,8 +187,8 @@ var EJ = (() => {
               var r3 = t3 < 12 ? "AM" : "PM";
               return n3 ? r3.toLowerCase() : r3;
             };
-            return r2.replace(y, (function(t3, r3) {
-              return r3 || (function(t4) {
+            return r2.replace(y, function(t3, r3) {
+              return r3 || function(t4) {
                 switch (t4) {
                   case "YY":
                     return String(e2.$y).slice(-2);
@@ -244,8 +240,8 @@ var EJ = (() => {
                     return i2;
                 }
                 return null;
-              })(t3) || i2.replace(":", "");
-            }));
+              }(t3) || i2.replace(":", "");
+            });
           }, m2.utcOffset = function() {
             return 15 * -Math.round(this.$d.getTimezoneOffset() / 15);
           }, m2.diff = function(r2, d2, l2) {
@@ -300,21 +296,21 @@ var EJ = (() => {
           }, m2.toString = function() {
             return this.$d.toUTCString();
           }, M2;
-        })(), k = _.prototype;
-        return O.prototype = k, [["$ms", r], ["$s", i], ["$m", s], ["$H", u], ["$W", a], ["$M", c], ["$y", h], ["$D", d]].forEach((function(t2) {
+        }(), k = _.prototype;
+        return O.prototype = k, [["$ms", r], ["$s", i], ["$m", s], ["$H", u], ["$W", a], ["$M", c], ["$y", h], ["$D", d]].forEach(function(t2) {
           k[t2[1]] = function(e2) {
             return this.$g(e2, t2[0], t2[1]);
           };
-        })), O.extend = function(t2, e2) {
+        }), O.extend = function(t2, e2) {
           return t2.$i || (t2(e2, _, O), t2.$i = true), O;
         }, O.locale = w, O.isDayjs = S, O.unix = function(t2) {
           return O(1e3 * t2);
         }, O.en = D[g], O.Ls = D, O.p = {}, O;
-      }));
+      });
     }
   });
 
-  // ../ej-render-test/js/standalone.ts
+  // ../../ej-render-test/js/standalone.ts
   var standalone_exports = {};
   __export(standalone_exports, {
     createEjournalAssembler: () => createEjournalAssembler,
@@ -3918,8 +3914,9 @@ var EJ = (() => {
     const refundedItemIds = new Set(
       refundItems.map((ri) => ri.salesOrderItemId).filter((id) => typeof id === "number" && id > 0)
     );
-    const rels = refundItems.length > 0 && refundedItemIds.size > 0 ? allRels.filter((r) => refundedItemIds.has(r.salesOrderItemId)) : allRels;
-    const discountRateGroups = rels.length > 0 ? buildDiscountRateGroupsFromRels(rels) : buildDiscountRateGroupsFromGovPersons(govPersons);
+    const hasRefundItemScope = refundItems.length > 0 && refundedItemIds.size > 0;
+    const rels = hasRefundItemScope ? allRels.filter((r) => refundedItemIds.has(r.salesOrderItemId)) : allRels;
+    const discountRateGroups = rels.length > 0 ? buildDiscountRateGroupsFromRels(rels) : hasRefundItemScope ? [] : buildDiscountRateGroupsFromGovPersons(govPersons);
     const returnManualDiscount = num(refund?.manualDiscount ?? order.manualDiscount);
     const data = {
       config,
@@ -4017,10 +4014,20 @@ var EJ = (() => {
       manualDiscount: num(order.manualDiscount) ? -num(order.manualDiscount) : void 0,
       discountRateGroups,
       amountDue: -voidTotal,
-      payments: payments.map((p) => ({
-        method: p.paymentMethod,
-        amount: -(num(p.tenderedAmount) > 0 ? num(p.tenderedAmount) : num(p.amount))
-      })),
+      // 冲销取实收净额 amount(= tendered − change),与物理打印 printVoidReceipt 同口径:
+      // 取 tendered 会把找零再退一遍(找零在销售时已付客户,样例 SI 669 多退 2.00);
+      // 按 grandTotal 剩余额封顶,adjuster 足额保底后 Σamount 略高时 Σ冲销仍恒等于 Amount。
+      payments: (() => {
+        let remaining = voidTotal;
+        return payments.map((p) => {
+          const voidAmount = Math.min(num(p.amount), Math.max(remaining, 0));
+          remaining -= voidAmount;
+          return {
+            method: p.paymentMethod,
+            amount: -voidAmount
+          };
+        });
+      })(),
       taxBreakdown: {
         vatableSales: -num(order.variableSales),
         vatAmount: -num(order.vatAmount),
@@ -4592,7 +4599,9 @@ var EJ = (() => {
 
   // src/services/receiptRender/ejournalAssembler.ts
   function isReprintReceipt(extend) {
-    if (!extend) return false;
+    if (!extend) {
+      return false;
+    }
     try {
       const parsed = JSON.parse(extend);
       return parsed?.isReprint === true || parsed?.isReprint === "true";
@@ -4601,7 +4610,9 @@ var EJ = (() => {
     }
   }
   function normalizeSi(s) {
-    if (!s) return "";
+    if (!s) {
+      return "";
+    }
     const trimmed = s.trim();
     const stripped = trimmed.replace(/^0+/, "");
     return stripped === "" ? "0" : stripped;
@@ -4675,7 +4686,7 @@ var EJ = (() => {
           filterDate: endT.slice(0, 10),
           seq: 4,
           render: () => stripPrinterMarkers(
-            generateShiftReceiptText(shift, perDateConfig, renderOpts)
+            generateShiftReceiptText(shift, perDateConfig)
           )
         });
       }
@@ -4688,21 +4699,29 @@ var EJ = (() => {
           filterDate: (ds.businessDate || "").slice(0, 10),
           seq: 5,
           render: () => stripPrinterMarkers(
-            generateDailySettlementReceiptText(ds, perDateConfig, renderOpts)
+            generateDailySettlementReceiptText(ds, perDateConfig)
           )
         });
       }
     }
     function addReceiptTasks() {
       for (const r of pendingReceipts) {
-        if (OPERATIONAL_RECEIPT_TYPES.has(r.receiptType)) continue;
+        if (OPERATIONAL_RECEIPT_TYPES.has(r.receiptType)) {
+          continue;
+        }
         const isReprint = isReprintReceipt(r.extend);
         const isCrossDayCandidate = CROSS_DAY_VERBATIM_TYPES.has(r.receiptType);
-        if (!isReprint && !isCrossDayCandidate) continue;
-        if (!r.printTxt || !r.printTxt.trim()) continue;
+        if (!isReprint && !isCrossDayCandidate) {
+          continue;
+        }
+        if (!r.printTxt || !r.printTxt.trim()) {
+          continue;
+        }
         if (isCrossDayCandidate && !isReprint) {
           const si = normalizeSi(extractOriginalSiFromReceipt(r.printTxt, r.receiptType));
-          if (si && si !== "0" && orderSiNumbers.has(si)) continue;
+          if (si && si !== "0" && orderSiNumbers.has(si)) {
+            continue;
+          }
         }
         const printTime = r.printTime || "";
         tasks.push({
@@ -4724,7 +4743,9 @@ var EJ = (() => {
         }
         for (const header of list.orders || []) {
           const si = normalizeSi(header.siNumber);
-          if (si && si !== "0") orderSiNumbers.add(si);
+          if (si && si !== "0") {
+            orderSiNumbers.add(si);
+          }
           const detail = details[header.id];
           if (!detail || !detail.order) {
             stats.missingDetailCount++;
@@ -4752,14 +4773,20 @@ var EJ = (() => {
       finish() {
         addReceiptTasks();
         const inDateRange = (t) => {
-          if (!t || t.length < 10) return true;
+          if (!t || t.length < 10) {
+            return true;
+          }
           const day = t.slice(0, 10);
           return day >= startDate && day <= endDate;
         };
         const filtered = tasks.filter((t) => inDateRange(t.filterDate));
         filtered.sort((a, b) => {
-          if (a.time < b.time) return -1;
-          if (a.time > b.time) return 1;
+          if (a.time < b.time) {
+            return -1;
+          }
+          if (a.time > b.time) {
+            return 1;
+          }
           return a.seq - b.seq;
         });
         stats.taskCount = filtered.length;
