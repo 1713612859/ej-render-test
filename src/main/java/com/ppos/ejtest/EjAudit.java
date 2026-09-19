@@ -175,8 +175,8 @@ public class EjAudit {
         for (Check c : all) {
             boolean ok = c.failures() == 0;
             if (!ok) bad++;
-            System.out.printf("  %s %-76s %s%n", ok ? "✅" : "❌", c.label(),
-                ok ? "通过" : "异常 " + c.failures());
+            System.out.println("  " + (ok ? "✅" : "❌") + " " + padDisplay(c.label(), 74)
+                + " " + padDisplayRight(ok ? "通过" : "异常 " + c.failures(), 10));
         }
         System.out.println(SEP_LINE);
         System.out.println(bad == 0 ? " 结论: 全部校验通过 ✅" : " 结论: " + bad + " 项校验未通过 ❌");
@@ -262,6 +262,17 @@ public class EjAudit {
             w += wide ? 2 : 1;
         }
         return w;
+    }
+
+    /** 汇总表对齐：中文按 2 列宽算显示宽度后左/右补空格（String.format 对中文必歪）。 */
+    private static String padDisplay(String s, int w) {
+        int pad = w - width(s);
+        return s + (pad > 0 ? " ".repeat(pad) : " ");
+    }
+
+    private static String padDisplayRight(String s, int w) {
+        int pad = w - width(s);
+        return (pad > 0 ? " ".repeat(pad) : "") + s;
     }
 
     private static double num(String s) {
@@ -1500,8 +1511,8 @@ public class EjAudit {
     /** 打印一组校验项，附最多 10 条明细。 */
     private static void printChecks(List<Check> checks, List<String> problems) {
         for (Check c : checks) {
-            System.out.printf("  %s %-76s 异常 %d%n",
-                c.failures() == 0 ? "✅" : "❌", c.label(), c.failures());
+            System.out.println("  " + (c.failures() == 0 ? "✅" : "❌") + " "
+                + padDisplay(c.label(), 74) + " " + padDisplayRight("异常 " + c.failures(), 10));
         }
         if (!problems.isEmpty()) {
             System.out.println("  明细（最多 50 条）:");

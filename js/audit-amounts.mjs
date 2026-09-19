@@ -267,8 +267,12 @@ const rowsOut = [
   ['C3 找零来源 CHANGE source = CASH（电子支付无找零）', stats.c3],
   ['D 行合计 Line Sum = Gross(销售 Sale) / 实退−SC(退货·作废 Ret/Void)', stats.d],
 ];
+// 汇总表对齐：中文按 2 列宽算显示宽度（padEnd 按字符数，中文列必歪）
+const dw = (s) => { let w = 0; for (const c of s) w += /[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF60\u3000-\u303F✅❌⚠]/.test(c) ? 2 : 1; return w; };
+const padL = (s, w) => s + ' '.repeat(Math.max(1, w - dw(s)));
+const padR = (s, w) => ' '.repeat(Math.max(0, w - dw(s))) + s;
 for (const [label, n] of rowsOut) {
-  console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(64)} 异常 ${n}`);
+  console.log(`  ${n === 0 ? '✅' : '❌'} ${padL(label, 70)} ${padR(`异常 ${n}`, 8)}`);
 }
 // 数量>0 时标红（ANSI），IDEA 运行窗口 / Git Bash 均可渲染
 const red = (s) => `\u001b[1;31m${s}\u001b[0m`;

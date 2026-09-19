@@ -260,8 +260,12 @@ const rowsOut = [
   ['6 数量合计 Qty Sum = Total Qty（仅销售票 Sale）', stats.qtyMismatch],
   ['7 订单头关键字段 Header Fields 齐全', stats.missField],
 ];
+// 汇总表对齐：中文按 2 列宽算显示宽度（padEnd 按字符数，中文列必歪）
+const dw = (s) => { let w = 0; for (const c of s) w += /[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF60\u3000-\u303F✅❌⚠]/.test(c) ? 2 : 1; return w; };
+const padL = (s, w) => s + ' '.repeat(Math.max(1, w - dw(s)));
+const padR = (s, w) => ' '.repeat(Math.max(0, w - dw(s))) + s;
 for (const [label, n] of rowsOut) {
-  console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(60)} 异常 ${n}`);
+  console.log(`  ${n === 0 ? '✅' : '❌'} ${padL(label, 60)} ${padR(`异常 ${n}`, 8)}`);
 }
 if (problems.length) {
   console.log('\n明细（每类最多 10 条）:');

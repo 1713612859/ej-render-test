@@ -351,8 +351,12 @@ const rows = [
   ['X1 班次衔接 Shift SI Chain 首尾相接（同日内 Same day）', stats.xSeq],
   ['X2 班次 SI 段 ⊆ Z 号段 Shift SI within Z Range（跨日班次允许）', stats.xRange],
 ];
+// 汇总表对齐：中文按 2 列宽算显示宽度（padEnd 按字符数，中文列必歪）
+const dw = (s) => { let w = 0; for (const c of s) w += /[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF60\u3000-\u303F✅❌⚠]/.test(c) ? 2 : 1; return w; };
+const padL = (s, w) => s + ' '.repeat(Math.max(1, w - dw(s)));
+const padR = (s, w) => ' '.repeat(Math.max(0, w - dw(s))) + s;
 for (const [label, n] of rows) {
-  console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(72)} 异常 ${n}`);
+  console.log(`  ${n === 0 ? '✅' : '❌'} ${padL(label, 74)} ${padR(`异常 ${n}`, 8)}`);
 }
 if (problems.length) {
   console.log('\n明细（每类最多 5 条）:');

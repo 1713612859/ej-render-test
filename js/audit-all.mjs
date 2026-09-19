@@ -64,10 +64,13 @@ const line = '='.repeat(62);
 console.log(`\n${line}`);
 console.log(` 汇总 — ${file.split(/[\\/]/).pop()}`);
 console.log(line);
+// 汇总对齐：中文按 2 列宽算显示宽度（padEnd 按字符数，中文列必歪）
+const dw = (s) => { let w = 0; for (const c of s) w += /[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF60\u3000-\u303F✅❌💥⚠]/.test(c) ? 2 : 1; return w; };
+const padL = (s, w) => s + ' '.repeat(Math.max(1, w - dw(s)));
 for (const r of results) {
   const mark = r.crashed ? '💥' : r.fails === 0 ? '✅' : '❌';
   const note = r.crashed ? '脚本异常退出' : r.fails === 0 ? '通过' : `${r.fails} 项不通过`;
-  console.log(`  ${mark} ${r.name.padEnd(22)} ${note.padEnd(14)} ${r.script}`);
+  console.log(`  ${mark} ${padL(r.name, 26)} ${padL(note, 16)} ${r.script}`);
 }
 const bad = results.filter((r) => r.fails > 0 || r.crashed).length;
 console.log(line);
