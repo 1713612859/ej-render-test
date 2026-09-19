@@ -84,18 +84,30 @@ public class GmailSender {
         message.setSubject(subject, "UTF-8");
         message.setText(body, "UTF-8");
 
-        try {
-            Transport.send(message);
-        } catch (AuthenticationFailedException e) {
-            throw new IllegalStateException(
-                    "认证失败：确认 appPassword 是「应用专用密码」且不含空格（需先开启两步验证）。", e);
-        } catch (MessagingException e) {
-            if (e.getCause() instanceof SocketTimeoutException) {
+        // 代理出口对 smtp.gmail.com:587 的转发间歇性不通(节点漂移,部分出口封 SMTP 出站,
+        // 实测同配置时通时断),连接类错误自动重试;认证失败不重试。
+        MessagingException last = null;
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            try {
+                Transport.send(message);
+                return;
+            } catch (AuthenticationFailedException e) {
                 throw new IllegalStateException(
+                    "认证失败：确认 appPassword 是「应用专用密码」且不含空格（需先开启两步验证）。", e);
+            } catch (MessagingException e) {
+                last = e;
+                if (e.getCause() instanceof SocketTimeoutException) {
+                    throw new IllegalStateException(
                         "连接超时：当前网络可能无法直连 smtp.gmail.com:587，需代理或换 SMTP 服务。", e);
+                }
+                System.out.println("  ⚠ 第 " + attempt + "/4 次发送失败（" + e.getMessage()
+                    + "），3 秒后重试…");
+                try { Thread.sleep(3000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
             }
-            throw e;
         }
+        throw new IllegalStateException(
+            "4 次均失败：代理出口对 smtp.gmail.com:587 间歇性不通（节点漂移），"
+                + "稍后再试或更换代理节点。", last);
     }
 
     private static Properties config() {
