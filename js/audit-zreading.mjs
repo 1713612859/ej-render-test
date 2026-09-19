@@ -333,26 +333,26 @@ console.log(line);
 }
 
 const rows = [
-  ['Z1 税分解四项 = 当日票据税分解合计（逐字段）', stats.z1],
-  ['Z2 净额 = 毛额-折扣-退货-作废-VAT调整', stats.z2],
-  ['Z3 日销售 = 本期累计-上期累计', stats.z3],
-  ['Z4 折扣明细合计 = LESS DISCOUNT', stats.z4],
-  ['Z5 销售调整 = LESS RETURN / LESS VOID', stats.z5],
-  ['Z6 VAT调整明细合计 = LESS VAT ADJUSTMENT', stats.z6],
-  ['Z7 Z Counter 逐日+1 且营业日连续（每日一张）', stats.z7],
-  ['Z8 累计销售链首尾相接', stats.z8],
-  ['Z9 SI 号段不重叠', stats.z9],
-  ['Z10 报表日期段规范', stats.z10],
-  ['Z11 号段内无缺号（SI/VOID/RETURN）', stats.z11],
-  ['Z12 毛额 = 当日销售票合计', stats.z12],
-  ['Z13 作废额 = 当日作废票合计（含税）', stats.z13],
-  ['Z14 退货额 = 当日退货票合计（含税）', stats.z14],
-  ['Z15 交易票均在 Z 窗口内（末日之前）', stats.z15],
-  ['X 班次 SI 段首尾相接（同日内）', stats.xSeq],
-  ['X 班次 SI 段 ⊆ Z 号段（跨日班次允许）', stats.xRange],
+  ['Z1 税分解 Tax Breakdown = 当日票据合计 Daily Ticket Sum（VATABLE/VAT/EXEMPT/ZERO 逐字段）', stats.z1],
+  ['Z2 净额 Net = GROSS − LESS DISCOUNT − LESS RETURN − LESS VOID − LESS VAT ADJ', stats.z2],
+  ['Z3 日销 Day Sales = Present Acc. − Previous Acc.', stats.z3],
+  ['Z4 折扣汇总 Discount Summary 合计 = LESS DISCOUNT', stats.z4],
+  ['Z5 销售调整 Sales Adj.（RETURN:/VOID:）= LESS RETURN/LESS VOID', stats.z5],
+  ['Z6 VAT调整 VAT Adjustment 各项合计 = LESS VAT ADJUSTMENT', stats.z6],
+  ['Z7 Z Counter 逐日+1 且营业日连续（每日一张 One per day）', stats.z7],
+  ['Z8 累计销售链 Accumulated Sales Chain 首尾相接', stats.z8],
+  ['Z9 SI 号段不重叠 No Overlap（Beg./End. SI #）', stats.z9],
+  ['Z10 报表日期段 Date Range 规范（00:00:00~23:59:59）', stats.z10],
+  ['Z11 号段无缺号 No Missing No.（SI/VOID/RETURN）', stats.z11],
+  ['Z12 毛额 GROSS AMOUNT = 当日销售票合计 Daily Sales Tickets', stats.z12],
+  ['Z13 作废额 Void = 当日作废票合计（票面 Amount 含税）', stats.z13],
+  ['Z14 退货额 Return = 当日退货票合计（票面税分解四项 Four Fields 含税）', stats.z14],
+  ['Z15 交易票均在 Z 窗口内 Ticket within Z Window（末日之前）', stats.z15],
+  ['X1 班次衔接 Shift SI Chain 首尾相接（同日内 Same day）', stats.xSeq],
+  ['X2 班次 SI 段 ⊆ Z 号段 Shift SI within Z Range（跨日班次允许）', stats.xRange],
 ];
 for (const [label, n] of rows) {
-  console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(44)} 异常 ${n}`);
+  console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(72)} 异常 ${n}`);
 }
 if (problems.length) {
   console.log('\n明细（每类最多 5 条）:');

@@ -259,21 +259,21 @@ console.log(`\n${line}`);
 console.log(` 金额勾稽 — 销售 ${stats.sale} / 退货 ${stats.ret} / 作废 ${stats.void} 张`);
 console.log(line);
 const rowsOut = [
-  ['A 应付勾稽（销售/退货·作废符号口径见文件头）', stats.a],
-  ['B 税分解合计 = 毛额 ∓ LessVAT ± AddVAT ∓ 普通折扣', stats.b],
-  ['C 支付 - 找零 = 应付（仅销售票）', stats.c],
-  ['E 应付>0 必有支付行（欠款探针）', stats.e],
-  ['C2 退废票支付冲销 = Amount（有支付行时）', stats.c2],
-  ['C3 找零来源=CASH（电子支付无找零）', stats.c3],
-  ['D 行合计 = Gross(销售) / 实退−SC(退货·作废)', stats.d],
+  ['A 应付 Amount Due = Gross ∓LessVAT ±AddVAT ∓Discount ±SC（退废符号反转）', stats.a],
+  ['B 税分解 Tax Split 合计 = Gross ∓LessVAT ±AddVAT ∓Regular Disc.', stats.b],
+  ['C 支付 Payments − 找零 CHANGE = 应付 Amount Due（仅销售票 Sale）', stats.c],
+  ['E 应付>0 必有支付行 Has Payment（欠款探针 Unpaid Probe）', stats.e],
+  ['C2 退废票支付冲销 Reversal = Amount（有支付行时）', stats.c2],
+  ['C3 找零来源 CHANGE source = CASH（电子支付无找零）', stats.c3],
+  ['D 行合计 Line Sum = Gross(销售 Sale) / 实退−SC(退货·作废 Ret/Void)', stats.d],
 ];
 for (const [label, n] of rowsOut) {
-  console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(48)} 异常 ${n}`);
+  console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(64)} 异常 ${n}`);
 }
 // 数量>0 时标红（ANSI），IDEA 运行窗口 / Git Bash 均可渲染
 const red = (s) => `\u001b[1;31m${s}\u001b[0m`;
 console.log(
-  `  ${stats.w === 0 ? '✅' : '⚠'} 现金找零向上取整未执行（仅提示，不计失败）${stats.w > 0 ? red(stats.w) : 0}`,
+  `  ${stats.w === 0 ? '✅' : '⚠'} 现金找零向上取整 Cash Round-up 未执行（仅提示 Warning，不计失败）${stats.w > 0 ? red(stats.w) : 0}`,
 );
 if (problems.length) {
   console.log('\n明细:');

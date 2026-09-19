@@ -248,20 +248,20 @@ console.log(line);
 }
 
 const rowsOut = [
-  ['1 商品区表头存在', stats.noRegion],
-  ['2 商品行 ≥ 1（有订单必有商品）', stats.noItem],
-  ['3 商品名非空', stats.noName],
-  ['3 商品名非占位值', stats.badName],
-  ['4 商品数量非零', stats.zeroQty],
-  ['4.5 行金额 = 单价×数量', stats.lineAmt],
-  ['4.6 符号规范(销售≥0/退废≤0)', stats.signErr],
-  ['4.7 CASH IN/OUT 金额行', stats.cashBad],
-  ['5 商品行数 = Number of Items（仅销售票）', stats.cntMismatch],
-  ['6 数量合计 = Total Qty（仅销售票）', stats.qtyMismatch],
-  ['7 订单头关键字段齐全', stats.missField],
+  ['1 商品区表头 Item Header 存在（Description/Qty/U.Price/Amount）', stats.noRegion],
+  ['2 商品行 Items ≥ 1（有订单必有商品）', stats.noItem],
+  ['3 商品名 Item Name 非空', stats.noName],
+  ['3 商品名非占位值 Not Placeholder', stats.badName],
+  ['4 商品数量 Qty 非零', stats.zeroQty],
+  ['4.5 行金额 Amount = U.Price × Qty', stats.lineAmt],
+  ['4.6 符号规范 Sign（销售≥0 / 退废≤0）', stats.signErr],
+  ['4.7 CASH IN/OUT 金额行 Amount Line', stats.cashBad],
+  ['5 商品行数 Row Count = Number of Items（仅销售票 Sale）', stats.cntMismatch],
+  ['6 数量合计 Qty Sum = Total Qty（仅销售票 Sale）', stats.qtyMismatch],
+  ['7 订单头关键字段 Header Fields 齐全', stats.missField],
 ];
 for (const [label, n] of rowsOut) {
-  console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(42)} 异常 ${n}`);
+  console.log(`  ${n === 0 ? '✅' : '❌'} ${label.padEnd(60)} 异常 ${n}`);
 }
 if (problems.length) {
   console.log('\n明细（每类最多 10 条）:');

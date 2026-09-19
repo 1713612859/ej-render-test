@@ -175,7 +175,7 @@ public class EjAudit {
         for (Check c : all) {
             boolean ok = c.failures() == 0;
             if (!ok) bad++;
-            System.out.printf("  %s %-44s %s%n", ok ? "✅" : "❌", c.label(),
+            System.out.printf("  %s %-76s %s%n", ok ? "✅" : "❌", c.label(),
                 ok ? "通过" : "异常 " + c.failures());
         }
         System.out.println(SEP_LINE);
@@ -527,14 +527,14 @@ public class EjAudit {
             noHeader, noFooter, emptyAmount);
 
         return List.of(
-            new Check("[结构] 票据类型可识别", unknown),
-            new Check("[结构] 时间升序无逆序", orderErr),
-            new Check("[结构] 日期归属无越界", oob),
-            new Check("[结构] 双联配对", pairErr),
-            new Check("[结构] 双联内容一致（Cashier=Customer）", pairDiff),
-            new Check("[结构] 无脏值", dirty),
-            new Check("[结构] 行宽 ≤ " + LINE_WIDTH + "（商品名/备注等客户数据除外）", over.size()),
-            new Check("[结构] 头部/尾部/金额行完整", noHeader + noFooter + emptyAmount)
+            new Check("[结构] 票据类型 Type 可识别（SALES INVOICE/RETURN/VOID/...）", unknown),
+            new Check("[结构] 时间升序 Chronological Order 无逆序", orderErr),
+            new Check("[结构] 日期归属 Date Range 无越界（文件名区间）", oob),
+            new Check("[结构] 双联配对 Copy Pair（Cashier+Customer）", pairErr),
+            new Check("[结构] 双联内容一致 Copy Identical（Cashier=Customer）", pairDiff),
+            new Check("[结构] 无脏值 No Dirty Values（null/NaN/undefined）", dirty),
+            new Check("[结构] 行宽 Width ≤ " + LINE_WIDTH + "（商品名/备注等客户数据除外）", over.size()),
+            new Check("[结构] 头部/尾部/金额行完整 Header/Footer/Amount Lines", noHeader + noFooter + emptyAmount)
         );
     }
 
@@ -805,18 +805,18 @@ public class EjAudit {
             .collect(Collectors.joining("  ")));
 
         List<Check> checks = List.of(
-            new Check("[内容] 商品区表头存在", noRegion),
-            new Check("[内容] 商品行 ≥ 1（有订单必有商品）", noItem),
-            new Check("[内容] 商品名非空", noName),
-            new Check("[内容] 商品名非占位值", badName),
-            new Check("[内容] 商品数量非零", zeroQty),
-            new Check("[内容] 行金额 = 单价×数量", lineAmt),
-            new Check("[内容] 符号规范（销售行≥0 / 退废行≤0）", signErr),
-            new Check("[内容] 商品行数 = Number of Items", cntMismatch),
-            new Check("[内容] 数量合计 = Total Qty", qtyMismatch),
-            new Check("[内容] 订单头关键字段齐全", missField),
-            new Check("[内容] CASH IN/OUT 金额与浮点对账", cashBad),
-            new Check("[内容] 单号无断号（SI/RETURN/VOID，容忍重置）", seqGap)
+            new Check("[内容] 商品区表头 Item Header 存在（Description/Qty/U.Price/Amount）", noRegion),
+            new Check("[内容] 商品行 Items ≥ 1（有订单必有商品）", noItem),
+            new Check("[内容] 商品名 Item Name 非空", noName),
+            new Check("[内容] 商品名非占位值 Not Placeholder", badName),
+            new Check("[内容] 商品数量 Qty 非零", zeroQty),
+            new Check("[内容] 行金额 Amount = U.Price × Qty", lineAmt),
+            new Check("[内容] 符号规范 Sign（销售行≥0 / 退废行≤0）", signErr),
+            new Check("[内容] 商品行数 Row Count = Number of Items", cntMismatch),
+            new Check("[内容] 数量合计 Qty Sum = Total Qty", qtyMismatch),
+            new Check("[内容] 订单头关键字段 Header Fields 齐全", missField),
+            new Check("[内容] CASH IN/OUT 金额与浮点对账 Float Recon（含 SHORT/OVER）", cashBad),
+            new Check("[内容] 单号无断号 No Gaps（SI/RETURN/VOID，容忍重置）", seqGap)
         );
         printChecks(checks, problems);
         return checks;
@@ -990,13 +990,13 @@ public class EjAudit {
         }
 
         List<Check> checks = List.of(
-            new Check("[金额] A 应付勾稽（销售/退货·作废符号口径见文件头）", a),
-            new Check("[金额] B 税分解合计 = 毛额∓LessVAT±AddVAT∓普通折扣", bCnt),
-            new Check("[金额] C 支付-找零 = 应付（仅销售票）", c),
-            new Check("[金额] E 应付>0 必有支付行（欠款探针）", e),
-            new Check("[金额] C2 退废票支付冲销 = Amount（有支付行时）", c2),
-            new Check("[金额] C3 找零来源=CASH（电子支付无找零）", c3),
-            new Check("[金额] D 行合计 = Gross(销售) / 实退-SC(退货·作废)", d)
+            new Check("[金额] A 应付 Amount Due = Gross ∓LessVAT ±AddVAT ∓Disc ±SC（退废符号反转）", a),
+            new Check("[金额] B 税分解 Tax Split = Gross ∓LessVAT ±AddVAT ∓Regular Disc.", bCnt),
+            new Check("[金额] C 支付 Payments − 找零 CHANGE = Amount Due（仅销售票 Sale）", c),
+            new Check("[金额] E 应付>0 必有支付行 Has Payment（欠款探针 Unpaid）", e),
+            new Check("[金额] C2 退废票支付冲销 Reversal = Amount（有支付行时）", c2),
+            new Check("[金额] C3 找零来源 CHANGE Source = CASH（电子支付无找零）", c3),
+            new Check("[金额] D 行合计 Line Sum = Gross(Sale) / 实退−SC(Ret/Void)", d)
         );
         printChecks(checks, problems);
         // 数量>0 时标红（ANSI），IDEA 运行窗口 / Git Bash 均可渲染
@@ -1410,23 +1410,23 @@ public class EjAudit {
         }
 
         List<Check> checks = List.of(
-            new Check("[Z] 税分解四项 = 当日票据税分解合计（逐字段）", selfConsist),
-            new Check("[Z] 净额 = 毛额-折扣-退货-作废-VAT调整", netErr),
-            new Check("[Z] 日销售 = 本期累计-上期累计", dayErr),
-            new Check("[Z] 折扣明细合计 = LESS DISCOUNT", discErr),
-            new Check("[Z] 销售调整 = LESS RETURN / LESS VOID", adjErr),
-            new Check("[Z] VAT 调整明细合计 = LESS VAT ADJUSTMENT", vatAdjErr),
-            new Check("[Z] Z Counter 逐日+1 且营业日连续（每日一张）", counterErr),
-            new Check("[Z] 累计销售链首尾相接", accErr),
-            new Check("[Z] SI 号段不重叠", siErr),
-            new Check("[Z] 报表日期段规范", dateErr),
-            new Check("[Z] 号段内无缺号（SI/VOID/RETURN）", gapErr),
-            new Check("[Z] 毛额 = 当日销售票合计", xGross),
-            new Check("[Z] 作废额 = 当日作废票合计（含税）", xVoid),
-            new Check("[Z] 退货额 = 当日退货票合计（含税）", xRet),
-            new Check("[Z] 交易票均在 Z 窗口内（末日之前）", uncovered),
-            new Check("[X] 班次 SI 段首尾相接（同日内）", xSeqBad),
-            new Check("[X] 班次 SI 段 ⊆ 当日 Z 号段", xRangeBad)
+            new Check("[Z] Z1 税分解 Tax Breakdown = 当日票据合计 Ticket Sum（VATABLE/VAT/EXEMPT/ZERO）", selfConsist),
+            new Check("[Z] Z2 净额 Net = GROSS−DISC−RET−VOID−VATADJ", netErr),
+            new Check("[Z] Z3 日销 Day Sales = Present−Previous Acc.", dayErr),
+            new Check("[Z] Z4 折扣汇总 Discount Summary = LESS DISCOUNT", discErr),
+            new Check("[Z] Z5 销售调整 Sales Adj.（RETURN:/VOID:）= LESS RETURN/VOID", adjErr),
+            new Check("[Z] Z6 VAT调整 VAT Adjustment 合计 = LESS VAT ADJUSTMENT", vatAdjErr),
+            new Check("[Z] Z7 Z Counter 逐日+1 且营业日连续（One per day）", counterErr),
+            new Check("[Z] Z8 累计销售链 Accumulated Chain 首尾相接", accErr),
+            new Check("[Z] Z9 SI 号段不重叠 No Overlap（Beg./End. SI #）", siErr),
+            new Check("[Z] Z10 报表日期段 Date Range 规范（00:00~23:59:59）", dateErr),
+            new Check("[Z] Z11 号段无缺号 No Missing No.（SI/VOID/RETURN）", gapErr),
+            new Check("[Z] Z12 毛额 GROSS AMOUNT = 当日销售票合计 Sales Tickets", xGross),
+            new Check("[Z] Z13 作废额 Void = 当日作废票合计（票面 Amount 含税）", xVoid),
+            new Check("[Z] Z14 退货额 Return = 当日退货票合计（票面税分解四项含税）", xRet),
+            new Check("[Z] Z15 交易票均在 Z 窗口内 Ticket in Z Window（末日之前）", uncovered),
+            new Check("[X] X1 班次衔接 Shift SI Chain 首尾相接（同日 Same day）", xSeqBad),
+            new Check("[X] X2 班次 SI 段 ⊆ Z 号段 Shift within Z Range", xRangeBad)
         );
         printChecks(checks, problems);
         System.out.printf("   ℹ 覆盖营业日 %d 天，Z Counter %s → %s%n",
@@ -1500,7 +1500,7 @@ public class EjAudit {
     /** 打印一组校验项，附最多 10 条明细。 */
     private static void printChecks(List<Check> checks, List<String> problems) {
         for (Check c : checks) {
-            System.out.printf("  %s %-44s 异常 %d%n",
+            System.out.printf("  %s %-76s 异常 %d%n",
                 c.failures() == 0 ? "✅" : "❌", c.label(), c.failures());
         }
         if (!problems.isEmpty()) {
