@@ -1028,8 +1028,10 @@ public class EjAudit {
     /** 某营业日从明细票汇总出的口径，用于与 Z 报表交叉核对。 */
     private static final class DayTotal {
         double sale, ret, voided;
-        /** 当日作废票的 Service Charge 合计 —— LESS VOID 含 SC 但税分解四项不扣,Z1 基数需加回。 */
-        double voidSc;
+        /** 旧版生成器退货口径(gross+lessVat,不减 addVat),与新版 four 双口径任一吻合即过。 */
+        double retLegacy;
+        /** 当日票据票面税分解逐字段累计(Z1 口径)。 */
+        double fourV, fourVat, fourE, fourZ;
     }
 
     /**
@@ -1094,16 +1096,26 @@ public class EjAudit {
                 else voidSeen.add(n);
             }
             if (d == null || no.endsWith("null") || !seen.add(no) || g == null) continue;
-            // 含税口径（2026-09-18 LUOJIA 实测,生成器对退货/作废分两种口径）:
-            // 退货含税 = Gross + LessVAT（折前、不含 SC,LessVAT 行印正值冲回）;
-            // 作废含税 = 票面 Amount（含 SC、按折扣冲回后的实冲净额）——
-            //   Z@09-15 = ΣAmount 9177.20,而 Σ(gross+lessVat) 8452.00,差 725.20
-            //   恰为作废票 SC 合计;VOID6 gross -16592 折扣 15000,Z 按 Amount -1592 计。
+            // 含税口径（生成器对退货/作废分两种口径,2026-09-19 确立终版）:
+            // 退货含税双口径（版本差异,Z14 任一吻合即过）:
+            //   新版 = 票面税分解四项 = gross+lessVat−addVat（LUOJIA 09-19: Z 1654.44 =
+            //     RET14 four -254.43 + RET15 -1400.01,多组折扣的 AddVAT 11.14 必须减）;
+            //   旧版 = gross+lessVat 不减 addVat（SANNIU 6-8月历史 Z:Z@07-10 294.01）。
+            // 作废含税 = 票面 Amount（含 SC、按折扣冲回的实冲净额;LUOJIA 09-15 实测）。
             double lessVat = sumAll(b.body(), "^LESS 12% VAT[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
             DayTotal dt = day.computeIfAbsent(d, k -> new DayTotal());
+            // 票面税分解四项（Z1 口径:Z 四项 = 当日票据票面税分解逐字段累计,09-19 逐分吻合;
+            // 旧恒等式 GROSS−RET−VOID−VATADJ±voidSc 对带 AddVAT 的作废票有固有残差,弃用）
+            dt.fourV += nz(amountOf(b.body(), "VATable Sales"));
+            dt.fourVat += nz(amountOf(b.body(), "VAT Amount (12%)"));
+            dt.fourE += nz(amountOf(b.body(), "VAT Exempt Sales"));
+            dt.fourZ += nz(amountOf(b.body(), "Zero Rated Sales"));
+            double four = nz(amountOf(b.body(), "VATable Sales")) + nz(amountOf(b.body(), "VAT Amount (12%)"))
+                + nz(amountOf(b.body(), "VAT Exempt Sales")) + nz(amountOf(b.body(), "Zero Rated Sales"));
             if (b.isSale()) dt.sale += g;
             else if (b.isReturn()) {
-                dt.ret += g + lessVat;
+                dt.ret += four;
+                dt.retLegacy += g + lessVat;
             } else {
                 String amountRaw = find(b.body(),
                     "^Amount[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
@@ -1111,7 +1123,6 @@ public class EjAudit {
                     "^Service Charge(?:\\([^)]*\\))?[ \t]+(-?[\\d,]+\\.\\d{2})[ \t]*$");
                 double sc = scRaw == null ? 0 : num(scRaw);
                 dt.voided += amountRaw != null ? num(amountRaw) : g + lessVat + sc;
-                dt.voidSc += Math.abs(sc); // 作废票 SC 印负值,加回 Z1 基数取绝对值
             }
         }
 
@@ -1166,17 +1177,21 @@ public class EjAudit {
             double net = nz(amountOf(b, "NET AMOUNT:"));
             double otherDisc = nz(amountOf(b, "OTHER DISC:"));
 
-            // Z1 税分解。LESS VOID 含作废单的 SC(见上方作废口径注释),而税分解四项
-            // 不随之扣减,基数需加回当日作废票 SC —— 2026-09-18 LUOJIA 实测:
-            // Z@09-15 差 725.20、Z@09-16 差 53.00,均恰为当日作废票 SC 合计,加回后逐分吻合。
-            double bk = nz(amountOf(b, "VATABLE SALES:")) + nz(amountOf(b, "VAT AMOUNT:"))
-                + nz(amountOf(b, "VAT EXEMPT SALES:")) + nz(amountOf(b, "ZERO RATED SALES:"));
+            // Z1 税分解 = 当日票据票面税分解逐字段累计(销+退+废,2026-09-19 确立口径,
+            // LUOJIA 四营业日逐分吻合;旧恒等式对带 AddVAT 的作废票有固有残差,弃用)。
             DayTotal dt1 = day.getOrDefault(bd, new DayTotal());
-            double bkExpect = gross - lessRet - lessVoid - lessVatAdj - otherDisc + dt1.voidSc;
-            if (Math.abs(bk - bkExpect) > EPS) {
+            double zV = nz(amountOf(b, "VATABLE SALES:"));
+            double zVat = nz(amountOf(b, "VAT AMOUNT:"));
+            double zE = nz(amountOf(b, "VAT EXEMPT SALES:"));
+            double zZ = nz(amountOf(b, "ZERO RATED SALES:"));
+            StringBuilder z1Detail = new StringBuilder();
+            if (Math.abs(zV - dt1.fourV) > EPS) z1Detail.append(String.format("VATABLE Z %.2f vs 票 %.2f; ", zV, dt1.fourV));
+            if (Math.abs(zVat - dt1.fourVat) > EPS) z1Detail.append(String.format("VAT Z %.2f vs 票 %.2f; ", zVat, dt1.fourVat));
+            if (Math.abs(zE - dt1.fourE) > EPS) z1Detail.append(String.format("EXEMPT Z %.2f vs 票 %.2f; ", zE, dt1.fourE));
+            if (Math.abs(zZ - dt1.fourZ) > EPS) z1Detail.append(String.format("ZERO Z %.2f vs 票 %.2f; ", zZ, dt1.fourZ));
+            if (!z1Detail.isEmpty()) {
                 selfConsist++;
-                problems.add(String.format("[Z1 税分解] %s: 合计 %.2f，基数 %.2f，差 %.2f",
-                    tag, bk, bkExpect, bk - bkExpect));
+                problems.add(String.format("[Z1 税分解] %s: %s", tag, z1Detail.toString().trim()));
             }
 
             // Z2 净额
@@ -1257,10 +1272,13 @@ public class EjAudit {
                     tag, gross, dt.sale, gross - dt.sale));
             }
             double retFull = lessRet + nz(amountOf(b, "VAT ON RETURN:"));
-            if (Math.abs(retFull - Math.abs(dt.ret)) > EPS) {
+            // 双口径任一吻合即过(新版=four 含 −addVat;旧版=legacy 不减),见 DayTotal 注释
+            boolean z14ok = Math.abs(retFull - Math.abs(dt.ret)) <= EPS
+                || Math.abs(retFull - Math.abs(dt.retLegacy)) <= EPS;
+            if (!z14ok) {
                 xRet++;
-                problems.add(String.format("[Z14 退货交叉] %s: Z 含税 %.2f，当日退货票合计 %.2f，差 %.2f",
-                    tag, retFull, Math.abs(dt.ret), retFull - Math.abs(dt.ret)));
+                problems.add(String.format("[Z14 退货交叉] %s: Z 含税 %.2f，退货票 four %.2f / legacy %.2f 均不符",
+                    tag, retFull, Math.abs(dt.ret), Math.abs(dt.retLegacy)));
             }
             double voidFull = lessVoid + nz(amountOf(b, "VAT ON VOID:"));
             if (Math.abs(voidFull - Math.abs(dt.voided)) > EPS) {
@@ -1392,7 +1410,7 @@ public class EjAudit {
         }
 
         List<Check> checks = List.of(
-            new Check("[Z] 税分解 = 毛额-退货-作废-VAT调整-普通折扣", selfConsist),
+            new Check("[Z] 税分解四项 = 当日票据税分解合计（逐字段）", selfConsist),
             new Check("[Z] 净额 = 毛额-折扣-退货-作废-VAT调整", netErr),
             new Check("[Z] 日销售 = 本期累计-上期累计", dayErr),
             new Check("[Z] 折扣明细合计 = LESS DISCOUNT", discErr),

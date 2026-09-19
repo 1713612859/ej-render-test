@@ -2,7 +2,8 @@
  * EJ Z-READING 勾稽（与 EjAudit.auditZReading 同口径，JS 侧补齐）。
  *
  * 报表内部自洽：
- *   Z1 税分解   VATable+VAT+Exempt+Zero = GROSS − LESS RET − LESS VOID − LESS VAT ADJ − OTHER DISC
+ *   Z1 税分解   Z 四项 = 当日票据票面税分解逐字段累计(销+退+废;2026-09-19 确立口径,
+ *               旧恒等式 GROSS−RET−VOID−VATADJ−DISC 对带 AddVAT 的作废票有固有残差)
  *   Z2 净额     GROSS − LESS DISCOUNT − LESS RETURN − LESS VOID − LESS VAT ADJUSTMENT = NET AMOUNT
  *   Z3 日销售   Present Accumulated − Previous Accumulated = Sales for the Day
  *   Z4 折扣     LESS DISCOUNT = DISCOUNT SUMMARY 各项之和（SC/PWD/NAAC/SP/MOV/OTHER）
@@ -10,7 +11,8 @@
  *   Z6 VAT调整  LESS VAT ADJUSTMENT = VAT ADJUSTMENT 各项之和
  *   Z10 日期段  Start/End 同一天且 00:00:00~23:59:59
  * 跨报表连续：Z7 Counter 递增 / Z8 累计链接轨 / Z9 SI 号段不重叠 / Z11 号段无缺号
- * 明细交叉：   Z12 毛额 / Z13 作废含税 / Z14 退货含税（含税 = 票面 Gross + LessVAT 冲回）
+ * 明细交叉：   Z12 毛额 / Z13 作废含税(票面 Amount,含SC) / Z14 退货含税(票面税分解四项,
+ *             即 Gross+LessVAT−AddVAT,不含SC) —— 生成器对退/废本就两种口径
  *
  * 忽略口径同 audit-ignore.mjs（重打 Z 不参与）。
  */
@@ -28,8 +30,10 @@ const blocks = text.split('\n   \n').filter((b) => b.trim().length > 0);
 
 const EPS = 0.1;
 const num = (s) => parseFloat(String(s).replace(/,/g, ''));
+// 标签按字面匹配:VAT Amount (12%) 的括号必须转义,否则 (12%) 变捕获组匹配失败
 const amt = (b, l) => {
-  const m = b.match(new RegExp(`^${l} *(-?[\\d,]+\\.\\d{2}) *$`, 'm'));
+  const esc = l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = b.match(new RegExp(`^${esc} *(-?[\\d,]+\\.\\d{2}) *$`, 'm'));
   return m ? num(m[1]) : null;
 };
 const nz = (v) => (v === null ? 0 : v);
@@ -82,11 +86,21 @@ for (const b of blocks) {
   if (!date || !no || seen.has((isSale ? 'S' : isRet ? 'R' : 'V') + no) || gross === null) continue;
   seen.add((isSale ? 'S' : isRet ? 'R' : 'V') + no);
   const lessVat = amt(b, 'LESS 12% VAT') || 0;
-  const d = days.get(date) || { sale: 0, ret: 0, void: 0, voidSc: 0 };
+  // 票面税分解四项 = gross + lessVat − addVat(多组政府折扣的 LESS/ADD VAT 行须全加总;
+  // 2026-09-19 RET14 双组折扣 LESS 5.57+11.14 / ADD 11.14,four = -260+16.71-11.14 = -254.43)
+  const addVat = [...b.matchAll(/^Add 12% VAT\s+(-?[\d,]+\.\d{2})\s*$/gm)].reduce((a, m) => a + num(m[1]), 0);
+  const four = (amt(b, 'VATable Sales') || 0) + (amt(b, 'VAT Amount (12%)') || 0)
+    + (amt(b, 'VAT Exempt Sales') || 0) + (amt(b, 'Zero Rated Sales') || 0);
+  const d = days.get(date) || { sale: 0, ret: 0, retLegacy: 0, void: 0, four: [0, 0, 0, 0] };
   if (isSale) d.sale += gross;
   else if (isRet) {
-    // Z14 退货含税(与A账一致,折前不含SC): Gross + LessVAT
-    d.ret += gross + lessVat;
+    // Z14 退货含税双口径(生成器版本差异,任一吻合即过):
+    //   新版(2026-09 LUOJIA 实测) = 票面税分解四项 = gross+lessVat−addVat,折前不含 SC
+    //     —— Z 1654.44 = RET14 four(-254.43)+RET15 four(-1400.01),AddVAT 11.14 必须减
+    //   旧版(SANNIU 6-8月历史 Z) = gross+lessVat,不减 addVat
+    //     —— Z@07-10 294.01 = legacy 294.01,four 279.21 差 14.80 = 当日退货票 AddVAT
+    d.ret += four;
+    d.retLegacy += gross + lessVat;
   } else {
     // Z13 作废含税 = 票面 Amount:含 SC、按折扣冲回后的实冲净额
     // (2026-09-18 LUOJIA 实测:Z@09-15 = ΣAmount 9177.20,Σ(gross+lessVat) 8452.00
@@ -94,8 +108,14 @@ for (const b of blocks) {
     const amount = amt(b, 'Amount');
     const sc = (b.match(/^Service Charge(?:\([^)]*\))? *(-?[\d,]+\.\d{2}) *$/m) || [])[1];
     d.void += amount !== null ? amount : gross + lessVat + (sc ? num(sc) : 0);
-    if (sc) d.voidSc += Math.abs(num(sc)); // 作废票 SC 印负值,加回 Z1 基数取绝对值
   }
+  // Z1 口径:Z 税分解四项 = 当日票据票面税分解逐字段累计(销+退+废)——
+  // 2026-09-19 实测逐分吻合(vatable 33847.33/vat 4061.66/exempt 3149.34/zero 0);
+  // 旧恒等式(GROSS−RET−VOID−VATADJ±voidSc)对 VOID 票带 AddVAT 时有固有残差,弃用。
+  d.four[0] += amt(b, 'VATable Sales') || 0;
+  d.four[1] += amt(b, 'VAT Amount (12%)') || 0;
+  d.four[2] += amt(b, 'VAT Exempt Sales') || 0;
+  d.four[3] += amt(b, 'Zero Rated Sales') || 0;
   days.set(date, d);
 }
 
@@ -161,13 +181,21 @@ for (let i = 0; i < zs.length; i++) {
   const tag = `Z@${z.bd || '?'}`;
   const b = z.body;
 
-  // Z1 税分解。LESS VOID 含作废单的 SC(见 Z13 口径注释),而税分解四项不随之扣减,
-  // 所以基数要加回当日作废票的 SC —— 2026-09-18 LUOJIA 实测:Z@09-15 差 725.20、
-  // Z@09-16 差 53.00,均恰为当日作废票 SC 合计,加回后逐分吻合。
-  const bk = z.vatable + z.vat + z.exempt + z.zero;
-  const day1 = days.get(z.bd) || { sale: 0, ret: 0, void: 0, voidSc: 0 };
-  const bkExpect = z.gross - z.lessRet - z.lessVoid - z.vatAdj - z.otherDisc + day1.voidSc;
-  if (Math.abs(bk - bkExpect) > EPS) push('z1', `[Z1 税分解] ${tag}: 四项合计 ${bk.toFixed(2)}，基数 ${bkExpect.toFixed(2)}，差 ${(bk - bkExpect).toFixed(2)}`);
+  // Z1 税分解 = 当日票据票面税分解逐字段累计(销+退+废,见 days 累计处注释)。
+  // 逐字段比对(比只比合计更严):2026-09-19 实测四字段全部逐分吻合。
+  const day1 = days.get(z.bd) || { four: [0, 0, 0, 0] };
+  const fields = [
+    ['vatable', z.vatable, day1.four[0]],
+    ['vat', z.vat, day1.four[1]],
+    ['exempt', z.exempt, day1.four[2]],
+    ['zero', z.zero, day1.four[3]],
+  ];
+  const z1diff = fields.reduce((a, [, zv, tv]) => a + Math.abs(zv - tv), 0);
+  if (z1diff > EPS) {
+    const detail = fields.filter(([, zv, tv]) => Math.abs(zv - tv) > EPS)
+      .map(([n, zv, tv]) => `${n} Z ${zv.toFixed(2)} vs 票 ${tv.toFixed(2)}`).join('; ');
+    push('z1', `[Z1 税分解] ${tag}: ${detail}`);
+  }
 
   // Z2 净额：GROSS − LESS DISCOUNT − LESS RETURN − LESS VOID − LESS VAT ADJUSTMENT = NET AMOUNT
   const netExpect = z.gross - z.lessDisc - z.lessRet - z.lessVoid - z.vatAdj;
@@ -207,7 +235,9 @@ for (let i = 0; i < zs.length; i++) {
   const d = days.get(z.bd) || { sale: 0, ret: 0, void: 0 };
   if (Math.abs(z.gross - d.sale) > EPS) push('z12', `[Z12 毛额] ${tag}: Z ${z.gross.toFixed(2)}，当日销售票合计 ${d.sale.toFixed(2)}，差 ${(z.gross - d.sale).toFixed(2)}`);
   const retFull = z.lessRet + z.vatOnRet;
-  if (Math.abs(retFull - Math.abs(d.ret)) > EPS) push('z14', `[Z14 退货] ${tag}: Z 含税 ${retFull.toFixed(2)}，当日退货票合计 ${Math.abs(d.ret).toFixed(2)}，差 ${(retFull - Math.abs(d.ret)).toFixed(2)}`);
+  const z14ok = Math.abs(retFull - Math.abs(d.ret)) <= EPS
+    || Math.abs(retFull - Math.abs(d.retLegacy)) <= EPS; // 新旧生成器双口径,见 days 累计处注释
+  if (!z14ok) push('z14', `[Z14 退货] ${tag}: Z 含税 ${retFull.toFixed(2)}，退货票 four ${Math.abs(d.ret).toFixed(2)} / legacy ${Math.abs(d.retLegacy).toFixed(2)} 均不符`);
   const voidFull = z.lessVoid + z.vatOnVoid;
   if (Math.abs(voidFull - Math.abs(d.void)) > EPS) push('z13', `[Z13 作废] ${tag}: Z 含税 ${voidFull.toFixed(2)}，当日作废票合计 ${Math.abs(d.void).toFixed(2)}，差 ${(voidFull - Math.abs(d.void)).toFixed(2)}`);
 
@@ -244,8 +274,10 @@ console.log(` 文件 ${file.split(/[\\/]/).pop()}`);
 console.log(line);
 // ── X-READING(班次切分):同日 SI 段首尾相接 + 落在 Z 号段(允许跨午夜班次/无销售班次沿用上期末号) ──
 {
+  // 注意 \\s / \\d 双反斜杠:模板字符串里单 \s 会被吃成字面 's',正则失配导致
+  // X 检查整体空转假绿(SANNIU 153023 三处真断号曾因此漏报,Java 侧抓到)
   const longOf2 = (b2, label) => {
-    const m = b2.match(new RegExp(`^${label}\s+(\d+)\s*$`, 'm'));
+    const m = b2.match(new RegExp('^' + label + '\\s+(\\d+)\\s*$', 'm'));
     return m ? Number(m[1]) : null;
   };
   const xByDay = new Map();
@@ -260,50 +292,48 @@ console.log(line);
     dayX.sort((a2, b3) => a2.time.localeCompare(b3.time));
     let prevEnd = null;
     for (const x of dayX) {
-      const beg = longOf2(x.body, 'Beg\. SI #:');
-      const end = longOf2(x.body, 'End\. SI #:');
+      const beg = longOf2(x.body, 'Beg\\. SI #:');
+      const end = longOf2(x.body, 'End\\. SI #:');
       if (beg === null || end === null || end < beg) continue;
       if (prevEnd !== null && beg !== prevEnd + 1 && beg !== prevEnd) {
-        stats.xSeq++;
-        if (stats.xSeq <= 5) push('xSeq', `[X 衔接] ${sd} X@${x.time}: SI ${beg} 接不上前班次末号 ${prevEnd}`);
+        push('xSeq', `[X 衔接] ${sd} X@${x.time}: SI ${beg} 接不上前班次末号 ${prevEnd}`);
       }
       prevEnd = end;
     }
     const z = zs.find((z2) => z2.bd === sd);
     if (!z) continue;
-    const zBeg = longOf2(z.body, 'Beg\. SI #:');
+    const zBeg = longOf2(z.body, 'Beg\\. SI #:');
     if (zBeg === null) continue;
     // 终值默认取当日 Z 自己的 End;末班次跨午夜且止日 Z 已存在时才延伸为止日 Z 的 End。
     // 踩过(2026-09-18 SANNIU):末班次 X@09-11 00:56 跨午夜,止日 Z@09-11 未结账不存在,
     // 旧实现退化成 zBeg → X 10945~10966 被误判越出 Z 段 10931~10931。
-    let zEndFinal = longOf2(z.body, 'End\. SI #:') ?? zBeg;
+    let zEndFinal = longOf2(z.body, 'End\\. SI #:') ?? zBeg;
     const lastDay = dayX.length && dayX[dayX.length - 1].time
       ? dayX[dayX.length - 1].time.slice(0, 10) : sd;
     if (lastDay !== sd) {
       for (const z2 of zs) {
         if (z2.bd === lastDay) {
-          const e2 = longOf2(z2.body, 'End\. SI #:');
+          const e2 = longOf2(z2.body, 'End\\. SI #:');
           if (e2 !== null) zEndFinal = e2;
         }
       }
     }
     for (const x of dayX) {
-      const beg = longOf2(x.body, 'Beg\. SI #:');
-      const end = longOf2(x.body, 'End\. SI #:');
+      const beg = longOf2(x.body, 'Beg\\. SI #:');
+      const end = longOf2(x.body, 'End\\. SI #:');
       if (beg === null || end === null) continue;
       let ok = (beg >= zBeg && end <= zEndFinal) || (beg === zBeg - 1 && end === beg);
       // X-READING 支持跨天班次(业务确认): X报表时间在另一天 = 跨天班次,放宽
       if (!ok && x.time && sd !== x.time.slice(0, 10)) ok = true;
       if (!ok) {
-        stats.xRange++;
-        if (stats.xRange <= 5) push('xRange', `[X 号段] ${sd} X@${x.time}: SI ${beg}~${end} 越出 Z 号段 ${zBeg}~${zEndFinal}`);
+        push('xRange', `[X 号段] ${sd} X@${x.time}: SI ${beg}~${end} 越出 Z 号段 ${zBeg}~${zEndFinal}`);
       }
     }
   }
 }
 
 const rows = [
-  ['Z1 税分解 = 毛额-退货-作废-VAT调整-其他折扣', stats.z1],
+  ['Z1 税分解四项 = 当日票据税分解合计（逐字段）', stats.z1],
   ['Z2 净额 = 毛额-折扣-退货-作废-VAT调整', stats.z2],
   ['Z3 日销售 = 本期累计-上期累计', stats.z3],
   ['Z4 折扣明细合计 = LESS DISCOUNT', stats.z4],
