@@ -264,8 +264,9 @@ const rowsOut = [
 const dw = (s) => { let w = 0; for (const c of s) w += /[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF60\u3000-\u303F✅❌⚠]/.test(c) ? 2 : 1; return w; };
 const padL = (s, w) => s + ' '.repeat(Math.max(1, w - dw(s)));
 const padR = (s, w) => ' '.repeat(Math.max(0, w - dw(s))) + s;
+const COLW = Math.max(...rowsOut.map((r) => dw(r[0]))) + 2;
 for (const [label, n] of rowsOut) {
-  console.log(`  ${n === 0 ? '✅' : '❌'} ${padL(label, 60)} ${padR(`异常 ${n}`, 8)}`);
+  console.log(`  ${n === 0 ? '✅' : '❌'} ${padL(label, COLW)} ${padR(`异常 ${n}`, 8)}`);
 }
 if (problems.length) {
   console.log('\n明细（每类最多 10 条）:');

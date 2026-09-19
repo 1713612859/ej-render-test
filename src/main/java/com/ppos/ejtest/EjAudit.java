@@ -172,10 +172,11 @@ public class EjAudit {
         System.out.println(SEP_LINE);
         System.out.println(" 汇总 — " + file.getFileName());
         System.out.println(SEP_LINE);
+        int colW = all.stream().mapToInt(c -> width(c.label())).max().orElse(60) + 2;
         for (Check c : all) {
             boolean ok = c.failures() == 0;
             if (!ok) bad++;
-            System.out.println("  " + (ok ? "✅" : "❌") + " " + padDisplay(c.label(), 74)
+            System.out.println("  " + (ok ? "✅" : "❌") + " " + padDisplay(c.label(), colW)
                 + " " + padDisplayRight(ok ? "通过" : "异常 " + c.failures(), 10));
         }
         System.out.println(SEP_LINE);
@@ -1510,9 +1511,10 @@ public class EjAudit {
 
     /** 打印一组校验项，附最多 10 条明细。 */
     private static void printChecks(List<Check> checks, List<String> problems) {
+        int colW = checks.stream().mapToInt(c -> width(c.label())).max().orElse(60) + 2;
         for (Check c : checks) {
             System.out.println("  " + (c.failures() == 0 ? "✅" : "❌") + " "
-                + padDisplay(c.label(), 74) + " " + padDisplayRight("异常 " + c.failures(), 10));
+                + padDisplay(c.label(), colW) + " " + padDisplayRight("异常 " + c.failures(), 10));
         }
         if (!problems.isEmpty()) {
             System.out.println("  明细（最多 50 条）:");
