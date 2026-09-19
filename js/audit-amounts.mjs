@@ -260,7 +260,7 @@ console.log(` 金额勾稽 — 销售 ${stats.sale} / 退货 ${stats.ret} / 作�
 console.log(line);
 const rowsOut = [
   ['A 应付 Amount Due = Gross ∓LessVAT ±AddVAT ∓Discount ±SC（退废符号反转）', stats.a],
-  ['B 税分解 Tax Split 合计 = Gross ∓LessVAT ±AddVAT ∓Regular Disc.', stats.b],
+  ['B 税分解 Breakdown of Sales 合计 = Gross ∓LessVAT ±AddVAT ∓Regular Disc.', stats.b],
   ['C 支付 Payments − 找零 CHANGE = 应付 Amount Due（仅销售票 Sale）', stats.c],
   ['E 应付>0 必有支付行 Has Payment（欠款探针 Unpaid Probe）', stats.e],
   ['C2 退废票支付冲销 Reversal = Amount（有支付行时）', stats.c2],

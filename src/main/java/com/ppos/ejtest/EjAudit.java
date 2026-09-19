@@ -991,7 +991,7 @@ public class EjAudit {
 
         List<Check> checks = List.of(
             new Check("[金额] A 应付 Amount Due = Gross ∓LessVAT ±AddVAT ∓Disc ±SC（退废符号反转）", a),
-            new Check("[金额] B 税分解 Tax Split = Gross ∓LessVAT ±AddVAT ∓Regular Disc.", bCnt),
+            new Check("[金额] B 税分解 Breakdown of Sales = Gross ∓LessVAT ±AddVAT ∓Regular Disc.", bCnt),
             new Check("[金额] C 支付 Payments − 找零 CHANGE = Amount Due（仅销售票 Sale）", c),
             new Check("[金额] E 应付>0 必有支付行 Has Payment（欠款探针 Unpaid）", e),
             new Check("[金额] C2 退废票支付冲销 Reversal = Amount（有支付行时）", c2),
